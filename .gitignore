@@ -13,6 +13,8 @@ dist-ssr
 release
 playwright-report
 test-results
+*.sqlite
+*.sqlite-*
 *.local
 
 # Editor directories and files

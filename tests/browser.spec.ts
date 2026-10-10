@@ -2,6 +2,29 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import Papa from 'papaparse'
 
+test('disables local SQLite project persistence in the browser preview', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/')
+  await page
+    .getByRole('button', { name: 'Importprojekte', exact: true })
+    .click()
+  await expect(page.getByRole('dialog').getByRole('status')).toContainText(
+    'nur in der Electron-App',
+  )
+  await page.screenshot({ path: testInfo.outputPath('projects-preview.png') })
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true)
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Beispieldaten laden' }).click()
+  await expect(
+    page.getByRole('button', { name: 'Projekt speichern', exact: true }),
+  ).toBeDisabled()
+})
+
 test('keeps WooCommerce credentials out of the browser preview', async ({
   page,
 }, testInfo) => {

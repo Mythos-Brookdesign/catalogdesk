@@ -13,12 +13,14 @@ const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { assetPath, saveSchema, trustedSender } = require('./security.cjs')
 const { testConnection } = require('./shop.cjs')
+const { createDatabaseClient } = require('./database-client.cjs')
 
 const development = !app.isPackaged && process.argv.includes('--dev')
 const entryUrl = development
   ? 'http://127.0.0.1:5178/'
   : 'catalog://app/index.html'
 let mainWindow
+let projectDatabase
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -32,6 +34,11 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 app.setName('CatalogDesk')
+if (!app.isPackaged && process.env.CATALOGDESK_TEST_USER_DATA) {
+  const { mkdirSync } = require('node:fs')
+  mkdirSync(process.env.CATALOGDESK_TEST_USER_DATA, { recursive: true })
+  app.setPath('userData', process.env.CATALOGDESK_TEST_USER_DATA)
+}
 
 function validateSender(event) {
   if (!trustedSender(event, mainWindow, entryUrl))
@@ -68,6 +75,22 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  projectDatabase = createDatabaseClient(
+    path.join(app.getPath('userData'), 'data', 'catalogdesk.sqlite'),
+  )
+  for (const operation of ['list', 'load', 'save', 'delete', 'info']) {
+    ipcMain.handle(`catalog:projects-${operation}`, async (event, payload) => {
+      validateSender(event)
+      try {
+        return {
+          ok: true,
+          value: await projectDatabase.request(operation, payload),
+        }
+      } catch (error) {
+        return { ok: false, error: error.message }
+      }
+    })
+  }
   session.defaultSession.setPermissionRequestHandler(
     (_contents, _permission, callback) => callback(false),
   )
@@ -154,4 +177,19 @@ app.whenReady().then(() => {
 })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+let databaseClosed = false
+let databaseClosing = false
+app.on('before-quit', (event) => {
+  if (!projectDatabase || databaseClosed) return
+  event.preventDefault()
+  if (databaseClosing) return
+  databaseClosing = true
+  projectDatabase
+    .close()
+    .catch(() => {})
+    .finally(() => {
+      databaseClosed = true
+      app.quit()
+    })
 })

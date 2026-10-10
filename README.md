@@ -23,6 +23,7 @@ Startet Vite und Electron. Nur die Browseransicht: `npm run dev:web`, erreichbar
 - Suche, Statusfilter, Sortierung und paginierte Produktliste.
 - Manuelle Korrekturen und ausdrueckliche Ausschluesse; Export wird bei aktiven Fehlern oder fehlenden Pflichtzuordnungen blockiert.
 - Bis zu 20 lokal gespeicherte Zuordnungsprofile inklusive Aufbereitungsoptionen.
+- SQLite-Projektbibliothek: komplette Importarbeitsstaende speichern, aktualisieren, kopieren, wieder oeffnen und bestaetigt loeschen.
 - WooCommerce-CSV fuer einfache Produkte als Entwuerfe (`Published = -1`) und separater Pruefbericht.
 - Mitgelieferter Beispielkatalog mit 12 Produkten und 5 fehlerhaften Datensaetzen.
 
@@ -43,8 +44,9 @@ Das Ergebnis sind elf exportierbare Produkte. Die Beispieldaten sind fiktiv; Pro
 React-Oberflaeche
   |-- Web Worker: Papa Parse, Validierung, Aufbereitung, CSV-Ausgabe
   |-- localStorage: versionierte und validierte Zuordnungsprofile
-    `-- isolierter Preload: openCsv / saveCsv / testShopConnection
-      `-- Electron Main: native Dialoge, Dateizugriffe, lesender HTTPS-API-Test
+  `-- isolierter Preload: Datei-, Projekt- und Shopmethoden
+       `-- Electron Main: native Dialoge und lesender HTTPS-API-Test
+            `-- Node Worker Thread: SQLite-Projektbibliothek
 ```
 
 Die fachliche Logik liegt in `src/domain/catalog.ts` und ist unabhaengig von React und Electron testbar. Der Worker verarbeitet auch Exporte ausserhalb des UI-Threads. Veraltete Analyseergebnisse werden ignoriert.
@@ -60,7 +62,7 @@ Die Browseransicht verwendet File APIs und Downloads statt Electron-IPC. Sie die
 - Restriktive Produktions-CSP, keine externen Inhalte, verweigerte Berechtigungen und blockierte Navigation, Popups und Webviews.
 - Spreadsheet-Formeln werden beim CSV-Export neutralisiert. Textwerte mit fuehrendem `=`, `+`, `-` oder `@` koennen deshalb einen Apostroph erhalten. Das verhindert Formelausfuehrung, kann aber solche Sonder-SKUs veraendern; vor dem Shopimport pruefen.
 - Keine Telemetrie oder Produktdaten-Uploads. Schriften und Fotos werden lokal ausgeliefert. Der optionale Shop-Verbindungstest sendet API-Schluessel nur als Authorization-Header an die eingegebene HTTPS-Shopadresse.
-- Produktdaten und Korrekturen bleiben im Arbeitsspeicher und gehen beim Schliessen oder Neuladen verloren. Persistiert werden nur Zuordnungsprofile.
+- Gespeicherte Importprojekte bleiben in der lokalen SQLite-Datei erhalten. Nicht gespeicherte Aenderungen gehen beim Schliessen oder Neuladen verloren. Zuordnungsprofile werden weiterhin separat in localStorage gespeichert.
 - Die Quelldatei wird niemals ueberschrieben. Ersatzimports und geaenderte Zuordnungen fragen vor dem Verwerfen manueller Korrekturen nach.
 
 ## Grenzen des MVP
@@ -68,6 +70,21 @@ Die Browseransicht verwendet File APIs und Downloads statt Electron-IPC. Sie die
 UTF-8, maximal 10 MB und 50.000 Datensaetze pro Import. Fehlende oder doppelte Spaltenueberschriften und uneinheitliche Spaltenzahlen werden abgelehnt. Preise sind nichtnegativ, auf zwei Dezimalstellen und 999.999.999 begrenzt. Artikelnummern werden fuer die Duplikatpruefung ohne Rand-Leerzeichen und ohne Beachtung der Gross-/Kleinschreibung verglichen.
 
 Nur einfache Produkte: keine Varianten, Bilderimporte, schreibende Shop-API, XLSX, automatische Synchronisation oder KI-Korrekturen. Kategorien koennen bereits im WooCommerce-Format (`Wohnen > Licht, Accessoires`) uebergeben werden. Eigene Steuer-, Versand- und Importregeln des Shops werden nicht geprueft.
+
+## Lokale SQLite-Projekte
+
+SQLite wird mit der Electron-/Node-Laufzeit ausgeliefert. Kein Datenbankserver und keine Treiberinstallation beim Endnutzer: Beim Start wird `data/catalogdesk.sqlite` im Electron-`userData`-Verzeichnis automatisch angelegt. Die Projektbibliothek zeigt den tatsaechlichen Pfad an. Das App-Paket enthaelt nur Code und Schema, niemals die persoenlichen Datenbanken anderer Nutzer. App-Updates ersetzen diese Datei nicht.
+
+1. CSV importieren und optional korrigieren.
+2. **Projekt speichern** oeffnen, einen Namen vergeben und speichern.
+3. Spaetere Aenderungen mit **Projekt aktualisieren** sichern oder mit **Kopie speichern** einen getrennten Arbeitsstand anlegen.
+4. Nach dem Neustart oben **Importprojekte** oeffnen und das Projekt auswaehlen.
+
+Gespeichert werden Quelldatensaetze, Dateiname, Demo-Kennzeichen, Spaltenzuordnung, Aufbereitungsoptionen, manuelle Korrekturen und ausgeschlossene Zeilen. Beim Oeffnen wird die Analyse neu berechnet. Die Quelldatei muss dafuer nicht mehr vorhanden sein. Bis zu 100 Projekte mit jeweils 40 MB, 50.000 Zeilen und 1.000 Spalten sind moeglich. Die Speicherung erfolgt ausdruecklich per Schaltflaeche, nicht automatisch. Vor dem Ersetzen eines ungespeicherten Imports wird nachgefragt. Loeschen entfernt den gespeicherten Stand nach Bestaetigung; der aktuell geoeffnete Arbeitsstand bleibt im Speicher.
+
+SQL-Zugriffe laufen in einem Hintergrund-Thread. Der Renderer hat nur konkrete Projektmethoden, keine freie SQL- oder Dateipfad-API. Eingaben werden validiert, Werte ueber Prepared Statements gebunden und Updates transaktional gespeichert. Eine Revisionsnummer verhindert verlorene Updates bei mehreren Fenstern; bei Konflikten erneut oeffnen oder als Kopie speichern. Das Schema ist ueber `PRAGMA user_version` versioniert; neuere unbekannte Schemata werden nicht ueberschrieben. Bei Datenbankfehlern bleibt der CSV-Workflow nutzbar, die Projektbibliothek zeigt einen Fehler.
+
+Die Datenbank ist nicht verschluesselt und enthaelt keine Shop-Zugangsdaten. Fuer vertrauliche Produktdaten die Festplattenverschluesselung des Betriebssystems verwenden. Fuer eine Dateisicherung die App vollstaendig beenden und das gesamte `data`-Verzeichnis sichern, einschliesslich eventuell vorhandener SQLite-WAL-Dateien. Ein integrierter Backup-Export und eine Exporthistorie sind noch nicht enthalten. Die Browser-Vorschau hat keinen SQLite-Zugriff.
 
 ## WooCommerce-Verbindung
 

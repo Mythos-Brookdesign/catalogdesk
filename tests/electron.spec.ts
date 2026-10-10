@@ -4,6 +4,141 @@ import path from 'node:path'
 import os from 'node:os'
 import Papa from 'papaparse'
 
+test('persists corrected import projects across a full Electron restart', async ({
+  playwright,
+}, testInfo) => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), 'catalogdesk-projects-'),
+  )
+  const launch = () =>
+    playwright._electron.launch({
+      args: ['.'],
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '',
+        CATALOGDESK_TEST_USER_DATA: directory,
+      },
+    })
+  let application = await launch()
+  try {
+    let page = await application.firstWindow()
+    await page.getByRole('button', { name: 'Beispieldaten laden' }).click()
+    await expect(
+      page.getByRole('button', { name: 'Datensatz 3 bearbeiten' }),
+    ).toBeEnabled()
+    await page
+      .getByRole('button', { name: 'Projekt speichern', exact: true })
+      .click()
+    let library = page.getByRole('dialog')
+    await expect(library.getByLabel('Projektname')).toBeEnabled()
+    await library.getByLabel('Projektname').fill('Nordlicht Import')
+    await library
+      .getByRole('button', { name: 'Projekt speichern', exact: true })
+      .click()
+    await expect(library.getByRole('status')).toContainText(
+      'SQLite gespeichert',
+    )
+    await library
+      .getByRole('button', { name: 'Schliessen', exact: true })
+      .click()
+    await expect(page.locator('.project-state')).toContainText(
+      'Gespeichert: Nordlicht Import',
+    )
+    await page.getByRole('button', { name: 'Datensatz 3 bearbeiten' }).click()
+    await page
+      .locator('.inspector')
+      .getByLabel(/^Preis/)
+      .fill('129,00')
+    await page
+      .getByRole('button', { name: 'Korrektur \u00fcbernehmen' })
+      .click()
+    await expect(
+      page.getByRole('button', { name: 'Datensatz 8 bearbeiten' }),
+    ).toBeEnabled()
+    await page
+      .getByRole('checkbox', { name: 'Datensatz 8 ausschliessen' })
+      .check()
+    await expect(page.locator('.project-state')).toContainText('Ungespeichert')
+    await page
+      .getByRole('button', { name: 'Projekt speichern', exact: true })
+      .click()
+    await library.getByRole('button', { name: 'Projekt aktualisieren' }).click()
+    await expect(library.getByRole('status')).toContainText(
+      'SQLite gespeichert',
+    )
+    await page.screenshot({ path: testInfo.outputPath('saved-project.png') })
+    const info = await page.evaluate(() =>
+      window.catalogDesktop!.databaseInfo(),
+    )
+    expect(info.ok).toBe(true)
+    await application.close()
+    if (!info.ok) throw new Error('Database info unavailable')
+    expect((await readFile(info.value.path)).subarray(0, 16).toString()).toBe(
+      'SQLite format 3\0',
+    )
+
+    application = await launch()
+    page = await application.firstWindow()
+    await page
+      .getByRole('button', { name: 'Importprojekte', exact: true })
+      .click()
+    library = page.getByRole('dialog')
+    await library
+      .getByRole('button', { name: 'Projekt Nordlicht Import oeffnen' })
+      .click()
+    await expect(page.locator('.product-table tbody tr')).toHaveCount(12)
+    await expect(page.locator('.project-state')).toContainText(
+      'Gespeichert: Nordlicht Import',
+    )
+    await expect(
+      page.getByRole('checkbox', { name: 'Datensatz 8 ausschliessen' }),
+    ).toBeChecked()
+    await expect(page.locator('.product-table tbody tr').nth(2)).toContainText(
+      '129.00',
+    )
+    await page.getByRole('button', { name: 'Datensatz 3 bearbeiten' }).click()
+    await expect(page.locator('.inspector').getByLabel(/^Preis/)).toHaveValue(
+      '129,00',
+    )
+    await page.getByRole('button', { name: 'Editor schliessen' }).last().click()
+    const stored = await page.evaluate(async () => {
+      const list = await window.catalogDesktop!.listProjects()
+      if (!list.ok) throw new Error(list.error)
+      return window.catalogDesktop!.loadProject(list.value[0].id)
+    })
+    expect(stored.ok && stored.value.revision).toBe(2)
+    expect(stored.ok && stored.value.snapshot.mapping.price).toBe(
+      'Verkaufspreis',
+    )
+    expect(stored.ok && stored.value.snapshot.options.priceFormat).toBe('de')
+    await page
+      .getByRole('button', { name: 'Importprojekte', exact: true })
+      .click()
+    await library
+      .getByRole('button', { name: 'Projekt Nordlicht Import loeschen' })
+      .click()
+    await library.getByRole('button', { name: 'Abbrechen' }).click()
+    await expect(
+      library.getByRole('button', { name: 'Projekt Nordlicht Import oeffnen' }),
+    ).toBeVisible()
+    await library
+      .getByRole('button', { name: 'Projekt Nordlicht Import loeschen' })
+      .click()
+    await library.getByRole('button', { name: 'Endgueltig loeschen' }).click()
+    await expect(
+      library.getByRole('button', { name: 'Projekt Nordlicht Import oeffnen' }),
+    ).toHaveCount(0)
+    expect(
+      await page.evaluate(() =>
+        window.catalogDesktop!.loadProject("' OR 1=1 --"),
+      ),
+    ).toMatchObject({ ok: false })
+  } finally {
+    await application.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test('checks a read-only shop connection through native IPC without storing keys', async ({
   playwright,
 }, testInfo) => {

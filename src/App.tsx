@@ -10,6 +10,7 @@ import {
   CircleAlert,
   ClipboardList,
   Download,
+  Database,
   FileCheck2,
   FileSpreadsheet,
   FolderOpen,
@@ -45,6 +46,12 @@ import type {
 } from './domain/catalog'
 import { demoCsv, demoImages, demoName } from './data/demo'
 import { Dialog } from './components/Dialog'
+import { ProjectsDialog } from './components/ProjectsDialog'
+import type {
+  ProjectSnapshot,
+  ProjectSummary,
+  SavedProject,
+} from './types/desktop'
 import { ShopConnectionDialog } from './components/ShopConnectionDialog'
 import type { CheckedShop } from './components/ShopConnectionDialog'
 import { createProfile, loadProfiles, saveProfiles } from './lib/profiles'
@@ -252,6 +259,16 @@ export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>(loadProfiles)
   const [profileId, setProfileId] = useState('')
   const [profileDialog, setProfileDialog] = useState(false)
+  const [projectsDialog, setProjectsDialog] = useState(false)
+  const [activeProject, setActiveProject] = useState<ProjectSummary | null>(
+    null,
+  )
+  const [savedSnapshot, setSavedSnapshot] = useState<ProjectSnapshot | null>(
+    null,
+  )
+  const [pendingProject, setPendingProject] = useState<SavedProject | null>(
+    null,
+  )
   const [shopDialog, setShopDialog] = useState(false)
   const [checkedShop, setCheckedShop] = useState<CheckedShop | null>(null)
   const [profileName, setProfileName] = useState('')
@@ -263,6 +280,18 @@ export default function App() {
   } | null>(null)
   const busy = importing || analyzing || exporting
   const dirty = Object.keys(edits).length > 0 || excluded.length > 0
+  const snapshot: ProjectSnapshot | null = dataset
+    ? { filename, demo: isDemo, dataset, mapping, options, edits, excluded }
+    : null
+  const projectDirty = Boolean(
+    snapshot &&
+    (!savedSnapshot ||
+      snapshot.dataset !== savedSnapshot.dataset ||
+      snapshot.mapping !== savedSnapshot.mapping ||
+      snapshot.options !== savedSnapshot.options ||
+      snapshot.edits !== savedSnapshot.edits ||
+      snapshot.excluded !== savedSnapshot.excluded),
+  )
   const canExport = Boolean(
     analysis &&
     !busy &&
@@ -310,6 +339,8 @@ export default function App() {
         )
       const parsed = await request<Dataset>('parse', file.content)
       setDataset(parsed)
+      setActiveProject(null)
+      setSavedSnapshot(null)
       setFilename(file.name)
       setIsDemo(file.demo)
       setMapping(suggestMapping(parsed.headers))
@@ -333,8 +364,37 @@ export default function App() {
   }
 
   function queueImport(file: ImportFile) {
-    if (dirty) setPendingImport(file)
+    if (dirty || (window.catalogDesktop && projectDirty)) setPendingImport(file)
     else void performImport(file)
+  }
+
+  function restoreProject(project: SavedProject) {
+    const saved = project.snapshot
+    setDataset(saved.dataset)
+    setFilename(saved.filename)
+    setIsDemo(saved.demo)
+    setMapping(saved.mapping)
+    setOptions(saved.options)
+    setEdits(saved.edits)
+    setExcluded(saved.excluded)
+    setActiveProject(project)
+    setSavedSnapshot(saved)
+    setProfileId('')
+    invalidateAnalysis()
+    setFilter('all')
+    setSearch('')
+    setPage(0)
+    setSort('source')
+    setSelected(null)
+    setView('catalog')
+    setError('')
+    setToast('Gespeichertes Projekt geoeffnet.')
+  }
+
+  function openSavedProject(project: SavedProject) {
+    setProjectsDialog(false)
+    if (projectDirty) setPendingProject(project)
+    else restoreProject(project)
   }
 
   async function readBrowserFile(file?: File) {
@@ -625,6 +685,15 @@ export default function App() {
             </strong>
           </div>
           <div className="topbar-actions">
+            <button
+              className="button shop-trigger"
+              aria-label="Importprojekte"
+              title="Gespeicherte Importprojekte"
+              onClick={() => setProjectsDialog(true)}
+            >
+              <Database size={16} />
+              <span>Importprojekte</span>
+            </button>
             <span className="local-status">
               <ShieldCheck size={15} />
               Lokale Daten
@@ -655,6 +724,13 @@ export default function App() {
                   : 'Export vorbereiten'}
             </h1>
             <p>{dataset ? filename : 'Kein Import geoeffnet'}</p>
+            {dataset && window.catalogDesktop && (
+              <span className="project-state">
+                {projectDirty
+                  ? 'Ungespeicherter Arbeitsstand'
+                  : `Gespeichert: ${activeProject?.name}`}
+              </span>
+            )}
           </div>
           <div className="head-actions">
             <button
@@ -665,6 +741,16 @@ export default function App() {
               <FolderOpen size={16} />
               {dataset ? 'Neue Datei' : 'Datei oeffnen'}
             </button>
+            {dataset && (
+              <button
+                className="button"
+                disabled={busy || !window.catalogDesktop}
+                onClick={() => setProjectsDialog(true)}
+              >
+                <Save size={16} />
+                Projekt speichern
+              </button>
+            )}
             {dataset && (
               <button
                 className="button primary"
@@ -1448,6 +1534,49 @@ export default function App() {
           onClose={() => setShopDialog(false)}
         />
       )}
+      {projectsDialog && (
+        <ProjectsDialog
+          snapshot={snapshot}
+          active={activeProject}
+          onSaved={(summary, saved) => {
+            setActiveProject(summary)
+            setSavedSnapshot(saved)
+          }}
+          onOpen={openSavedProject}
+          onDeleted={(id) => {
+            if (activeProject?.id === id) {
+              setActiveProject(null)
+              setSavedSnapshot(null)
+            }
+          }}
+          onClose={() => setProjectsDialog(false)}
+        />
+      )}
+      {pendingProject && (
+        <Dialog
+          title="Arbeitsstand ersetzen?"
+          onClose={() => setPendingProject(null)}
+        >
+          <p>
+            Nicht gespeicherte Aenderungen werden verworfen. Gespeicherte
+            Projekte bleiben erhalten.
+          </p>
+          <div className="dialog-actions">
+            <button className="button" onClick={() => setPendingProject(null)}>
+              Abbrechen
+            </button>
+            <button
+              className="button primary"
+              onClick={() => {
+                restoreProject(pendingProject)
+                setPendingProject(null)
+              }}
+            >
+              Projekt oeffnen
+            </button>
+          </div>
+        </Dialog>
+      )}
       {profileDialog && (
         <Dialog
           title="Zuordnungsprofile"
@@ -1534,8 +1663,9 @@ export default function App() {
       {pendingImport && (
         <Dialog title="Import ersetzen?" onClose={() => setPendingImport(null)}>
           <p>
-            Manuelle Korrekturen und Ausschl&uuml;sse des aktuellen Imports
-            werden verworfen.
+            Nicht gespeicherte Daten, Korrekturen und Ausschl&uuml;sse des
+            aktuellen Imports werden verworfen. Gespeicherte Projekte bleiben
+            erhalten.
           </p>
           <div className="dialog-actions">
             <button className="button" onClick={() => setPendingImport(null)}>

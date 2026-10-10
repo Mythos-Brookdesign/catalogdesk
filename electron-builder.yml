@@ -9,6 +9,9 @@ files:
   - electron/preload.cjs
   - electron/security.cjs
   - electron/shop.cjs
+  - electron/database.cjs
+  - electron/database-worker.cjs
+  - electron/database-client.cjs
   - public/icon.png
   - package.json
 mac:

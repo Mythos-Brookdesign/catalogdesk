@@ -22,6 +22,96 @@
   align-items: center;
   gap: 15px;
 }
+.project-state {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.project-save-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.project-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.project-list-head h3 {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.project-list {
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+.project-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+.project-list li > div {
+  flex: 1;
+  min-width: 0;
+}
+.project-list strong {
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.project-list span,
+.project-list time {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.project-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.project-notice {
+  margin: 12px 0;
+  font-size: 12px;
+  color: var(--green);
+}
+.project-delete {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 16px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.database-location {
+  display: grid;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+}
+.database-location code {
+  overflow-wrap: anywhere;
+}
+.head-actions {
+  flex-wrap: wrap;
+}
 .shop-trigger {
   min-height: 32px;
   font-size: 11px;
