@@ -8,6 +8,7 @@ files:
   - electron/main.cjs
   - electron/preload.cjs
   - electron/security.cjs
+  - electron/shop.cjs
   - public/icon.png
   - package.json
 mac:

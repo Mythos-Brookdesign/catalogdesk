@@ -18,6 +18,7 @@ import {
   LoaderCircle,
   Package,
   Pencil,
+  PlugZap,
   RotateCcw,
   Save,
   Search,
@@ -44,6 +45,8 @@ import type {
 } from './domain/catalog'
 import { demoCsv, demoImages, demoName } from './data/demo'
 import { Dialog } from './components/Dialog'
+import { ShopConnectionDialog } from './components/ShopConnectionDialog'
+import type { CheckedShop } from './components/ShopConnectionDialog'
 import { createProfile, loadProfiles, saveProfiles } from './lib/profiles'
 import type { Profile } from './lib/profiles'
 import { useCatalogWorker } from './lib/worker'
@@ -249,6 +252,8 @@ export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>(loadProfiles)
   const [profileId, setProfileId] = useState('')
   const [profileDialog, setProfileDialog] = useState(false)
+  const [shopDialog, setShopDialog] = useState(false)
+  const [checkedShop, setCheckedShop] = useState<CheckedShop | null>(null)
   const [profileName, setProfileName] = useState('')
   const [pendingImport, setPendingImport] = useState<ImportFile | null>(null)
   const [pendingMapping, setPendingMapping] = useState<{
@@ -619,10 +624,21 @@ export default function App() {
                   : 'Export'}
             </strong>
           </div>
-          <span className="local-status">
-            <ShieldCheck size={15} />
-            Lokal &amp; offline
-          </span>
+          <div className="topbar-actions">
+            <span className="local-status">
+              <ShieldCheck size={15} />
+              Lokale Daten
+            </span>
+            <button
+              className={`button shop-trigger ${checkedShop ? 'shop-checked' : ''}`}
+              onClick={() => setShopDialog(true)}
+              title="WooCommerce-Shopverbindung"
+              aria-label="Shopverbindung"
+            >
+              {checkedShop ? <CheckCircle2 size={16} /> : <PlugZap size={16} />}
+              <span>Shopverbindung</span>
+            </button>
+          </div>
         </header>
         <div className="page-head">
           <div>
@@ -1424,6 +1440,13 @@ export default function App() {
             <X size={14} />
           </button>
         </div>
+      )}
+      {shopDialog && (
+        <ShopConnectionDialog
+          checked={checkedShop}
+          onChecked={setCheckedShop}
+          onClose={() => setShopDialog(false)}
+        />
       )}
       {profileDialog && (
         <Dialog

@@ -1,0 +1,21 @@
+Type,SKU,Name,Published,Visibility in catalog,Description,Regular price,In stock?,Stock,Categories
+simple,NL-1001,Armbanduhr Essential,-1,visible,Edelstahlgehaeuse mit Lederarmband und schlichtem Zifferblatt.,84.90,1,20,Accessoires
+simple,NL-1002,Sneaker Runner,-1,visible,Leichter Alltagssneaker mit atmungsaktivem Obermaterial.,79.95,1,18,Schuhe
+simple,NL-1003,Kamera Classic,-1,visible,Analoge Kompaktkamera fuer kreative Momentaufnahmen.,119.00,1,5,Technik
+simple,NL-1004,Rucksack Alltag,-1,visible,Wasserabweisender Rucksack mit gepolstertem Laptopfach.,49.90,1,28,Taschen
+simple,NL-1005,Trinkflasche Steel,-1,visible,Isolierte Edelstahlflasche mit auslaufsicherem Schraubverschluss.,22.50,1,10,Outdoor
+simple,NL-1006,Notizbuch Studio,-1,visible,Punktkariertes Notizbuch mit robustem Leinenumschlag.,14.90,1,40,Papeterie
+simple,NL-1007,Schreibtischleuchte,-1,visible,Dimmbares warmweisses Licht fuer einen ruhigen Arbeitsplatz.,64.00,1,15,Wohnen
+simple,NL-1010,Armbanduhr Essential,-1,visible,Edelstahlgehaeuse mit Lederarmband,89.90,1,12,Accessoires
+simple,NL-1013,Wochenplaner Fokus,-1,visible,Undatierter Wochenplaner mit Platz fuer Aufgaben und Notizen.,16.90,1,35,Papeterie
+simple,NL-1014,Leinenbeutel Markt,-1,visible,Wiederverwendbarer Einkaufsbeutel aus festem Leinen.,12.50,1,50,Taschen
+simple,NL-1015,Keramikschale Abend,-1,visible,Handglasierte Schale fuer Muesli und kleine Gerichte.,21.90,1,18,Wohnen
+simple,NL-1016,Leselicht Mini,-1,visible,Kompaktes Leselicht mit Clip und drei Helligkeitsstufen.,19.90,1,22,Technik
+simple,NL-1017,Merinosocken Weg,-1,visible,Weiche Wandersocken mit verstaerkter Ferse und Spitze.,17.50,1,30,Outdoor
+simple,NL-1018,Korkuntersetzer Set,-1,visible,Vier runde Untersetzer aus naturbelassenem Kork.,8.90,1,60,Wohnen
+simple,NL-1019,Kugelschreiber Linie,-1,visible,Nachfuellbarer Kugelschreiber mit Metallgehaeuse.,11.90,1,45,Papeterie
+simple,NL-1020,Reiseetui Ordnung,-1,visible,Kompaktes Etui fuer Kabel und kleine Reiseutensilien.,24.90,1,16,Taschen
+simple,NL-1021,Yogamatte Balance,-1,visible,Rutschfeste Trainingsmatte mit Tragegurt.,39.90,1,14,Sport
+simple,NL-1022,Fahrradlicht City,-1,visible,Wiederaufladbares Fahrradlicht fuer den Stadtverkehr.,29.90,0,0,Outdoor
+simple,NL-1023,Holztablett Pause,-1,visible,Kleines Serviertablett aus geoeltem Buchenholz.,27.50,1,12,Wohnen
+simple,NL-1024,Schluesselanhaenger Loop,-1,visible,Schlichter Schluesselanhaenger mit stabiler Textilschlaufe.,7.90,1,80,Accessoires

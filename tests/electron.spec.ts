@@ -4,6 +4,98 @@ import path from 'node:path'
 import os from 'node:os'
 import Papa from 'papaparse'
 
+test('checks a read-only shop connection through native IPC without storing keys', async ({
+  playwright,
+}, testInfo) => {
+  const application = await playwright._electron.launch({
+    args: ['.'],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '' },
+  })
+  try {
+    const page = await application.firstWindow()
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    const dialog = page.getByRole('dialog')
+    const key = 'ck_' + 'a'.repeat(40)
+    const secret = 'cs_' + 'b'.repeat(40)
+    await page.screenshot({ path: testInfo.outputPath('shop-form.png') })
+    const fill = async () => {
+      await dialog.getByLabel('Consumer Key', { exact: true }).fill(key)
+      await dialog.getByLabel('Consumer Secret', { exact: true }).fill(secret)
+    }
+    await expect(
+      dialog.getByLabel('Consumer Secret', { exact: true }),
+    ).toHaveAttribute('type', 'password')
+    await application.evaluate(({ net }) => {
+      net.fetch = async (url, options) => {
+        if (
+          url !==
+            'https://catalogdesk.local/wp-json/wc/v3/products?per_page=1&page=1&status=any&_fields=id%2Csku' ||
+          options?.method !== 'GET' ||
+          options?.redirect !== 'error' ||
+          options?.credentials !== 'omit'
+        )
+          throw new Error('Unexpected request')
+        return new Response(JSON.stringify([{ id: 1, sku: 'NL-1001' }]), {
+          headers: { 'content-type': 'application/json', 'x-wp-total': '20' },
+        })
+      }
+    })
+    await fill()
+    await dialog
+      .getByRole('button', { name: 'Verbindung pruefen', exact: true })
+      .click()
+    await expect(dialog.getByRole('status')).toContainText('20 Produkte')
+    await expect(
+      dialog.getByLabel('Consumer Key', { exact: true }),
+    ).toHaveValue('')
+    await expect(
+      dialog.getByLabel('Consumer Secret', { exact: true }),
+    ).toHaveValue('')
+    expect(
+      await page.evaluate(() =>
+        JSON.stringify({
+          local: { ...localStorage },
+          session: { ...sessionStorage },
+        }),
+      ),
+    ).not.toContain(secret)
+    await page.screenshot({ path: testInfo.outputPath('shop-checked.png') })
+    await dialog
+      .getByRole('button', { name: 'Schliessen', exact: true })
+      .click()
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    await expect(dialog.getByRole('status')).toContainText('20 Produkte')
+    await expect(
+      dialog.getByLabel('Consumer Secret', { exact: true }),
+    ).toHaveValue('')
+    await application.evaluate(({ net }) => {
+      net.fetch = async () =>
+        new Response('Do not forward server errors', { status: 401 })
+    })
+    await fill()
+    await expect(dialog.getByRole('status')).toHaveCount(0)
+    await dialog
+      .getByRole('button', { name: 'Verbindung pruefen', exact: true })
+      .click()
+    await expect(dialog.getByRole('alert')).toContainText('Zugriff verweigert')
+    await dialog
+      .getByRole('button', { name: 'Schliessen', exact: true })
+      .click()
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    await expect(
+      dialog.getByLabel('Consumer Secret', { exact: true }),
+    ).toHaveValue('')
+  } finally {
+    await application.close()
+  }
+})
+
 test('runs the isolated production desktop app and opens and saves local CSV files', async ({
   playwright,
 }, testInfo) => {

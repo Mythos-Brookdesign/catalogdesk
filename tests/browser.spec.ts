@@ -2,6 +2,39 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import Papa from 'papaparse'
 
+test('keeps WooCommerce credentials out of the browser preview', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/')
+  await page
+    .getByRole('button', { name: 'Shopverbindung', exact: true })
+    .click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByLabel('Shopadresse (HTTPS)')).toHaveValue(
+    'https://catalogdesk.local',
+  )
+  await expect(
+    dialog.getByLabel('Consumer Key', { exact: true }),
+  ).toBeDisabled()
+  await expect(
+    dialog.getByLabel('Consumer Secret', { exact: true }),
+  ).toBeDisabled()
+  await expect(
+    dialog.getByRole('button', { name: 'Verbindung pruefen', exact: true }),
+  ).toBeDisabled()
+  await expect(dialog.getByRole('status')).toContainText(
+    'nur in der Electron-App',
+  )
+  await page.screenshot({ path: testInfo.outputPath('shop-connection.png') })
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+})
+
 test('reviews a supplier catalog and exports corrected draft products', async ({
   page,
 }, testInfo) => {

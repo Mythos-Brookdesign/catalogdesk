@@ -12,6 +12,7 @@ const { readFile, writeFile, stat } = require('node:fs/promises')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { assetPath, saveSchema, trustedSender } = require('./security.cjs')
+const { testConnection } = require('./shop.cjs')
 
 const development = !app.isPackaged && process.argv.includes('--dev')
 const entryUrl = development
@@ -113,6 +114,20 @@ app.whenReady().then(() => {
     if (canceled || !filePath) return false
     await writeFile(filePath, content, 'utf8')
     return true
+  })
+  let connectionTestRunning = false
+  ipcMain.handle('catalog:test-shop', async (event, payload) => {
+    validateSender(event)
+    if (connectionTestRunning)
+      return { ok: false, error: 'Ein Verbindungstest laeuft bereits.' }
+    connectionTestRunning = true
+    try {
+      return await testConnection(payload, (url, options) =>
+        net.fetch(url, options),
+      )
+    } finally {
+      connectionTestRunning = false
+    }
   })
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([

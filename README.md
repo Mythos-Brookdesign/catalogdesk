@@ -43,8 +43,8 @@ Das Ergebnis sind elf exportierbare Produkte. Die Beispieldaten sind fiktiv; Pro
 React-Oberflaeche
   |-- Web Worker: Papa Parse, Validierung, Aufbereitung, CSV-Ausgabe
   |-- localStorage: versionierte und validierte Zuordnungsprofile
-  `-- isolierter Preload: openCsv / saveCsv
-       `-- Electron Main: native Dialoge, asynchrone Dateizugriffe
+    `-- isolierter Preload: openCsv / saveCsv / testShopConnection
+      `-- Electron Main: native Dialoge, Dateizugriffe, lesender HTTPS-API-Test
 ```
 
 Die fachliche Logik liegt in `src/domain/catalog.ts` und ist unabhaengig von React und Electron testbar. Der Worker verarbeitet auch Exporte ausserhalb des UI-Threads. Veraltete Analyseergebnisse werden ignoriert.
@@ -59,7 +59,7 @@ Die Browseransicht verwendet File APIs und Downloads statt Electron-IPC. Sie die
 - Produktionsassets werden ueber `catalog://app` innerhalb des App-Verzeichnisses geladen; kein privilegiertes `file://`-Frontend.
 - Restriktive Produktions-CSP, keine externen Inhalte, verweigerte Berechtigungen und blockierte Navigation, Popups und Webviews.
 - Spreadsheet-Formeln werden beim CSV-Export neutralisiert. Textwerte mit fuehrendem `=`, `+`, `-` oder `@` koennen deshalb einen Apostroph erhalten. Das verhindert Formelausfuehrung, kann aber solche Sonder-SKUs veraendern; vor dem Shopimport pruefen.
-- Keine Telemetrie, Uploads oder API-Schluessel. Schriften und Fotos werden lokal ausgeliefert.
+- Keine Telemetrie oder Produktdaten-Uploads. Schriften und Fotos werden lokal ausgeliefert. Der optionale Shop-Verbindungstest sendet API-Schluessel nur als Authorization-Header an die eingegebene HTTPS-Shopadresse.
 - Produktdaten und Korrekturen bleiben im Arbeitsspeicher und gehen beim Schliessen oder Neuladen verloren. Persistiert werden nur Zuordnungsprofile.
 - Die Quelldatei wird niemals ueberschrieben. Ersatzimports und geaenderte Zuordnungen fragen vor dem Verwerfen manueller Korrekturen nach.
 
@@ -67,7 +67,15 @@ Die Browseransicht verwendet File APIs und Downloads statt Electron-IPC. Sie die
 
 UTF-8, maximal 10 MB und 50.000 Datensaetze pro Import. Fehlende oder doppelte Spaltenueberschriften und uneinheitliche Spaltenzahlen werden abgelehnt. Preise sind nichtnegativ, auf zwei Dezimalstellen und 999.999.999 begrenzt. Artikelnummern werden fuer die Duplikatpruefung ohne Rand-Leerzeichen und ohne Beachtung der Gross-/Kleinschreibung verglichen.
 
-Nur einfache Produkte: keine Varianten, Bilderimporte, Shop-API, XLSX, automatische Synchronisation oder KI-Korrekturen. Kategorien koennen bereits im WooCommerce-Format (`Wohnen > Licht, Accessoires`) uebergeben werden. Eigene Steuer-, Versand- und Importregeln des Shops werden nicht geprueft.
+Nur einfache Produkte: keine Varianten, Bilderimporte, schreibende Shop-API, XLSX, automatische Synchronisation oder KI-Korrekturen. Kategorien koennen bereits im WooCommerce-Format (`Wohnen > Licht, Accessoires`) uebergeben werden. Eigene Steuer-, Versand- und Importregeln des Shops werden nicht geprueft.
+
+## WooCommerce-Verbindung
+
+In der Electron-App oben **Shopverbindung** oeffnen. HTTPS-Adresse (vorbelegt: `https://catalogdesk.local`), Consumer Key und Consumer Secret eingeben; in WooCommerce einen API-Schluessel mit ausschliesslich **Lesen** verwenden. **Verbindung pruefen** fragt `GET /wp-json/wc/v3/products?per_page=1&status=any` ab und zeigt die von der API gemeldete Produktanzahl inklusive lesbarer Entwuerfe. Auch Shops in WordPress-Unterverzeichnissen werden unterstuetzt.
+
+HTTPS-Zertifikate muessen regulaer vertrauenswuerdig sein; fuer Local das eigene Zertifikat im macOS-Systemschluesselbund vertrauen. Die Zertifikatspruefung wird nicht umgangen. Weiterleitungen werden abgewiesen, Cookies nicht verwendet, Antworten begrenzt und Anfragen nach 15 Sekunden abgebrochen. Schluessel werden weder als URL-Parameter noch in Fehlermeldungen ausgegeben.
+
+Die Eingaben bleiben nur waehrend des offenen Dialogs im Arbeitsspeicher; nach erfolgreicher Pruefung oder Schliessen werden sie verworfen. Keine Speicherung in localStorage, Dateien oder Keychain. Nur das Pruefergebnis bleibt bis zum Neuladen sichtbar; es ist keine dauerhafte Verbindung. Im Browser ist die Maske gesperrt. Ein Produktvergleich und Schreibzugriffe sind noch nicht implementiert.
 
 Der CSV-Vertrag richtet sich nach dem [offiziellen WooCommerce-Schema](https://woocommerce.com/document/product-csv-importer-exporter/). Eine echte WooCommerce-Staging-Instanz wurde nicht angebunden; vor einem produktiven Import eine kleine Testdatei auf Staging pruefen.
 
