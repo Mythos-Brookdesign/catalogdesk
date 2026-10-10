@@ -1,0 +1,26 @@
+appId: de.brookdesign.catalogdesk
+productName: CatalogDesk
+asar: true
+directories:
+  output: release
+files:
+  - dist/**/*
+  - electron/main.cjs
+  - electron/preload.cjs
+  - electron/security.cjs
+  - public/icon.png
+  - package.json
+mac:
+  category: public.app-category.business
+  icon: public/icon.png
+  target:
+    - dmg
+    - zip
+win:
+  icon: public/icon.png
+  target:
+    - nsis
+linux:
+  icon: public/icon.png
+  target:
+    - AppImage
