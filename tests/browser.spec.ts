@@ -2,6 +2,49 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import Papa from 'papaparse'
 
+test('switches light and dark views without layout overflow', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Dunkelmodus', exact: true }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(
+    page.getByRole('button', { name: 'Dunkelmodus', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true')
+  await page.screenshot({ path: testInfo.outputPath('dark-empty.png') })
+  await page.getByRole('button', { name: 'Beispieldaten laden' }).click()
+  await expect(
+    page.getByRole('button', { name: 'Datensatz 3 bearbeiten' }),
+  ).toBeEnabled()
+  await page.screenshot({ path: testInfo.outputPath('dark-catalog.png') })
+  for (const view of ['Spaltenzuordnung', 'Export'] as const) {
+    await page.getByRole('button', { name: view, exact: true }).click()
+    await page.screenshot({ path: testInfo.outputPath(`dark-${view}.png`) })
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true)
+  }
+  await page
+    .getByRole('button', { name: 'Shopverbindung', exact: true })
+    .click()
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('dark-dialog.png') })
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Hellmodus', exact: true }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await page.screenshot({ path: testInfo.outputPath('light-export.png') })
+})
+
 test('disables local SQLite project persistence in the browser preview', async ({
   page,
 }, testInfo) => {

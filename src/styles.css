@@ -3,8 +3,10 @@
 
 :root {
   font-family: 'IBM Plex Sans Variable', sans-serif;
-  color: #27312e;
-  background: #f7f8fa;
+  color: var(--text);
+  background: var(--background);
+  color-scheme: light;
+  --text: #27312e;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -16,6 +18,46 @@
   --surface: #fff;
   --background: #f7f8fa;
   letter-spacing: 0;
+}
+.theme-control {
+  position: relative;
+  flex-shrink: 0;
+}
+.theme-toggle {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 2px;
+  background: var(--background);
+}
+.theme-toggle button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+}
+.theme-toggle button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--green);
+  box-shadow: 0 1px 3px #00000015;
+}
+.theme-error {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  z-index: 40;
+  width: 220px;
+  padding: 10px;
+  border: 1px solid var(--red);
+  border-radius: 4px;
+  color: var(--red);
+  background: var(--surface);
+  font-size: 11px;
 }
 .topbar-actions {
   display: flex;
@@ -1320,6 +1362,10 @@ tr:last-child td {
   grid-template-columns: minmax(0, 1fr) 280px;
   gap: 35px;
 }
+.export-layout > *,
+.mapping-layout > * {
+  min-width: 0;
+}
 .export-table {
   min-width: 600px;
   font-size: 12px;
@@ -1873,5 +1919,228 @@ tr:last-child td {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --text: #e2e8e4;
+  --background: #181c1a;
+  --surface: #212623;
+  --line: #39413c;
+  --muted: #a6b2aa;
+  --green: #78d4ac;
+  --green-light: #243b30;
+  --red: #f29b90;
+}
+[data-theme='dark']
+  :is(
+    .sidebar,
+    .table-scroll,
+    .inspector,
+    .dialog,
+    .toast,
+    .search-field,
+    .import-symbol
+  ) {
+  background: var(--surface);
+  color: var(--text);
+}
+[data-theme='dark']
+  :is(
+    .button,
+    .field input,
+    .field select,
+    .field textarea,
+    .mapping-row select,
+    .mapping-profile select
+  ) {
+  background: #282f2a;
+  border-color: #49534b;
+  color: var(--text);
+}
+[data-theme='dark'] .button:hover:not(:disabled) {
+  background: #344037;
+  border-color: #718779;
+}
+[data-theme='dark'] .button.primary {
+  background: #17664f;
+  border-color: #39866b;
+  color: #f3faf6;
+}
+[data-theme='dark'] .button.primary:hover:not(:disabled) {
+  background: #237e61;
+  border-color: #65b292;
+}
+[data-theme='dark'] .button.subtle {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+[data-theme='dark']
+  :is(
+    .nav-item,
+    .nav-item svg,
+    .nav-label,
+    .source-info strong,
+    .source-info,
+    .sidebar-footer,
+    .sidebar-footer div span,
+    .breadcrumb,
+    .breadcrumb strong,
+    .local-status,
+    .eyebrow,
+    .icon-button,
+    .stats button > span,
+    .stats svg,
+    .subtle-count,
+    .segmented button,
+    .segmented button > span,
+    .search-field,
+    .search-field input::placeholder,
+    .sort-field,
+    .sort-field select,
+    .product-link small,
+    .table-footer,
+    .field,
+    .field small,
+    .old-value,
+    .import-tool p,
+    .demo-product span,
+    .workspace-footer,
+    .mapping-table-head,
+    .mapping-row div span,
+    .sample-value,
+    .format-example span,
+    .export-status p,
+    .export-meta,
+    .report-section dt,
+    .dialog > p,
+    .profile-list span,
+    .muted-text,
+    .shop-result time
+  ) {
+  color: var(--muted);
+}
+[data-theme='dark']
+  :is(
+    .nav-item:hover,
+    .nav-count,
+    .segmented,
+    th,
+    .product-placeholder,
+    .format-example
+  ) {
+  background: #2b332d;
+}
+[data-theme='dark'] .nav-item.active {
+  background: var(--green-light);
+  color: var(--green);
+}
+[data-theme='dark'] .nav-item.active svg {
+  color: var(--green);
+}
+[data-theme='dark'] .active .nav-count {
+  background: #365344;
+}
+[data-theme='dark'] .segmented button.selected {
+  background: #404c43;
+  color: #f0f6f2;
+}
+[data-theme='dark'] .search-field input {
+  color: var(--text);
+}
+[data-theme='dark'] th {
+  color: #bfcbc3;
+}
+[data-theme='dark'] td {
+  border-bottom-color: #343d36;
+}
+[data-theme='dark'] .product-table tr:hover td {
+  background: #2c372f;
+}
+[data-theme='dark'] .selected-row td {
+  background: #30483a !important;
+}
+[data-theme='dark'] .cell-error {
+  color: var(--red);
+  background: #3b2b28;
+}
+[data-theme='dark'] :is(.change-marker, .value-change, .required) {
+  color: #e2c17a;
+}
+[data-theme='dark'] .status.success {
+  background: #2a4434;
+  color: #a0e1b8;
+}
+[data-theme='dark'] .status.error {
+  background: #49332b;
+  color: #ffc0a5;
+}
+[data-theme='dark'] .status.muted {
+  background: #343b36;
+  color: #c0cac3;
+}
+[data-theme='dark'] .status.neutral {
+  background: #304237;
+  color: #badbc3;
+}
+[data-theme='dark'] .issue-list {
+  background: #3b2b26;
+}
+[data-theme='dark'] .issue-list li {
+  color: #f4baa5;
+}
+[data-theme='dark'] .banner.danger {
+  background: #3d2926;
+  border-color: #765049;
+  color: var(--red);
+}
+[data-theme='dark'] .banner.warning {
+  background: #393324;
+  border-color: #706342;
+  color: #e6cb86;
+}
+[data-theme='dark'] :is(.shop-result, .shop-import-notice) {
+  border-color: #466c54;
+}
+[data-theme='dark'] .import-tool {
+  border-color: #52685a;
+  background: repeating-linear-gradient(
+    135deg,
+    #222b24,
+    #222b24 4px,
+    #202722 4px,
+    #202722 8px
+  );
+}
+[data-theme='dark'] .import-symbol {
+  border-color: var(--line);
+  color: var(--green);
+}
+[data-theme='dark'] .drop-overlay {
+  background: #243b30f2;
+}
+[data-theme='dark'] .toggle-row input {
+  background: #566259;
+}
+[data-theme='dark'] .toggle-row input:checked {
+  background: #267c5e;
+}
+[data-theme='dark'] .export-status {
+  color: #e6bd78;
+}
+[data-theme='dark'] .export-status h2 {
+  color: var(--text);
+}
+[data-theme='dark'] .report-section > svg {
+  color: #a2c0ad;
+}
+[data-theme='dark'] .dialog::backdrop {
+  background: #070b0990;
+}
+@media (max-width: 600px) {
+  .topbar-actions {
+    gap: 6px;
   }
 }

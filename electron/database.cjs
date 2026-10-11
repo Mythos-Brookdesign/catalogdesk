@@ -89,7 +89,7 @@ function openDatabase(filename) {
     )
     database.exec('BEGIN IMMEDIATE')
     const version = database.prepare('PRAGMA user_version').get().user_version
-    if (version > 1)
+    if (version > 2)
       throw new Error(
         'Diese Datenbank wurde mit einer neueren App-Version erstellt.',
       )
@@ -107,6 +107,14 @@ function openDatabase(filename) {
         ) STRICT;
         CREATE INDEX projects_updated ON projects(updated_at DESC);
         PRAGMA user_version = 1;`)
+    }
+    if (version < 2) {
+      database.exec(`CREATE TABLE settings (
+        key TEXT PRIMARY KEY CHECK(key = 'theme'),
+        value TEXT NOT NULL CHECK(value IN ('light', 'dark'))
+      ) STRICT;
+      INSERT INTO settings VALUES ('theme', 'light');
+      PRAGMA user_version = 2;`)
     }
     database.exec('COMMIT')
   } catch (error) {
@@ -140,6 +148,17 @@ function openDatabase(filename) {
   }
 
   return {
+    getTheme: () =>
+      database.prepare("SELECT value FROM settings WHERE key = 'theme'").get()
+        ?.value ?? 'light',
+    setTheme(value) {
+      const parsed = z.enum(['light', 'dark']).safeParse(value)
+      if (!parsed.success) throw new Error('Ungueltiges Farbschema.')
+      database
+        .prepare("UPDATE settings SET value = ? WHERE key = 'theme'")
+        .run(parsed.data)
+      return parsed.data
+    },
     list: () => listQuery.all(),
     load,
     save(payload) {
@@ -206,7 +225,7 @@ function openDatabase(filename) {
         )
       return true
     },
-    info: () => ({ path: filename, schemaVersion: 1 }),
+    info: () => ({ path: filename, schemaVersion: 2 }),
     close: () => database.close(),
   }
 }

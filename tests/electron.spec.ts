@@ -4,6 +4,58 @@ import path from 'node:path'
 import os from 'node:os'
 import Papa from 'papaparse'
 
+test('restores the SQLite theme before rendering after an Electron restart', async ({
+  playwright,
+}, testInfo) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'catalogdesk-theme-'))
+  const launch = () =>
+    playwright._electron.launch({
+      args: ['.'],
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '',
+        CATALOGDESK_TEST_USER_DATA: directory,
+      },
+    })
+  let application = await launch()
+  try {
+    let page = await application.firstWindow()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await page.getByRole('button', { name: 'Dunkelmodus', exact: true }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    expect(
+      await page.evaluate(() => window.catalogDesktop!.getTheme()),
+    ).toEqual({ ok: true, value: 'dark' })
+    expect(
+      await page.evaluate(() =>
+        window.catalogDesktop!.setTheme('invalid' as 'dark'),
+      ),
+    ).toMatchObject({ ok: false })
+    await application.close()
+    application = await launch()
+    page = await application.firstWindow()
+    await expect(
+      page.getByRole('button', { name: 'Dunkelmodus', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await page.screenshot({ path: testInfo.outputPath('dark-startup.png') })
+    await page.getByRole('button', { name: 'Hellmodus', exact: true }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await application.close()
+    application = await launch()
+    page = await application.firstWindow()
+    await expect(
+      page.getByRole('button', { name: 'Hellmodus', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true')
+    expect(
+      await page.evaluate(() => window.catalogDesktop!.getTheme()),
+    ).toEqual({ ok: true, value: 'light' })
+  } finally {
+    await application.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test('remembers encrypted shop credentials across restarts without exposing them to the renderer', async ({
   playwright,
 }, testInfo) => {

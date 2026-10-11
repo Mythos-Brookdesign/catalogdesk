@@ -40,6 +40,34 @@ const snapshot = {
 }
 
 describe('local SQLite projects', () => {
+  it('migrates version 1 without losing projects and persists both themes', () => {
+    const filename = location()
+    let database = storage.openDatabase(filename)
+    const saved = database.save({ name: 'Existing import', snapshot })
+    database.close()
+    const old = new DatabaseSync(filename)
+    old.exec('DROP TABLE settings; PRAGMA user_version = 1')
+    old.close()
+    database = storage.openDatabase(filename)
+    expect(database.getTheme()).toBe('light')
+    expect(database.load(saved.id).snapshot).toEqual(snapshot)
+    expect(database.setTheme('dark')).toBe('dark')
+    expect(() => database.setTheme("dark'); DROP TABLE projects;--")).toThrow(
+      'Farbschema',
+    )
+    database.close()
+    database = storage.openDatabase(filename)
+    expect(database.getTheme()).toBe('dark')
+    database.setTheme('light')
+    database.close()
+    database = storage.openDatabase(filename)
+    try {
+      expect(database.getTheme()).toBe('light')
+      expect(database.load(saved.id).name).toBe('Existing import')
+    } finally {
+      database.close()
+    }
+  })
   it('creates a real SQLite database and restores snapshots after reopening', () => {
     const filename = location()
     let database = storage.openDatabase(filename)
@@ -110,11 +138,11 @@ describe('local SQLite projects', () => {
     const filename = location()
     storage.openDatabase(filename).close()
     const database = new DatabaseSync(filename)
-    database.exec('PRAGMA user_version = 2')
+    database.exec('PRAGMA user_version = 3')
     database.close()
     expect(() => storage.openDatabase(filename)).toThrow('neueren')
     const check = new DatabaseSync(filename)
-    expect(check.prepare('PRAGMA user_version').get().user_version).toBe(2)
+    expect(check.prepare('PRAGMA user_version').get().user_version).toBe(3)
     check.close()
   })
 })

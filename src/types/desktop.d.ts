@@ -3,6 +3,7 @@ export type ShopConnection = {
   consumerKey: string
   consumerSecret: string
 }
+export type Theme = 'light' | 'dark'
 export type ShopConnectionResult =
   | { ok: true; url: string; productCount: number; checkedAt: string }
   | { ok: false; error: string }
@@ -55,6 +56,8 @@ export type DatabaseResult<Value> =
 declare global {
   interface Window {
     catalogDesktop?: {
+      getTheme: () => Promise<DatabaseResult<Theme>>
+      setTheme: (theme: Theme) => Promise<DatabaseResult<Theme>>
       savedShopConnection: () => Promise<DatabaseResult<{ url: string } | null>>
       saveShopConnection: (
         payload: ShopConnection,

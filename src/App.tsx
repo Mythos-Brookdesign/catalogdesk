@@ -47,6 +47,7 @@ import type {
 import type { ImportedShop } from './types/desktop'
 import { demoCsv, demoImages, demoName } from './data/demo'
 import { Dialog } from './components/Dialog'
+import { ThemeToggle } from './components/ThemeToggle'
 import { ProjectsDialog } from './components/ProjectsDialog'
 import type {
   ProjectSnapshot,
@@ -728,6 +729,7 @@ export default function App() {
             </strong>
           </div>
           <div className="topbar-actions">
+            <ThemeToggle />
             <button
               className="button shop-trigger"
               aria-label="Importprojekte"

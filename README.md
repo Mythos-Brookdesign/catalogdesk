@@ -25,6 +25,7 @@ Startet Vite und Electron. Nur die Browseransicht: `npm run dev:web`, erreichbar
 - Manuelle Korrekturen und ausdrueckliche Ausschluesse; Export wird bei aktiven Fehlern oder fehlenden Pflichtzuordnungen blockiert.
 - Bis zu 20 lokal gespeicherte Zuordnungsprofile inklusive Aufbereitungsoptionen.
 - SQLite-Projektbibliothek: komplette Importarbeitsstaende speichern, aktualisieren, kopieren, wieder oeffnen und bestaetigt loeschen.
+- Hell-/Dunkelmodus mit in SQLite gespeicherter Auswahl und Wiederherstellung beim App-Start.
 - WooCommerce-CSV fuer einfache Produkte als Entwuerfe (`Published = -1`) und separater Pruefbericht.
 - Mitgelieferter Beispielkatalog mit 12 Produkten und 5 fehlerhaften Datensaetzen.
 
@@ -73,6 +74,8 @@ UTF-8, maximal 10 MB und 50.000 Datensaetze pro Import. Fehlende oder doppelte S
 Nur einfache Produkte: keine Varianten, Bilderimporte, schreibende Shop-API, XLSX, automatische Synchronisation oder KI-Korrekturen. Kategorien koennen bereits im WooCommerce-Format (`Wohnen > Licht, Accessoires`) uebergeben werden. Eigene Steuer-, Versand- und Importregeln des Shops werden nicht geprueft.
 
 ## Lokale SQLite-Projekte
+
+Der Sonnen-/Mond-Umschalter oben wechselt das Farbschema. In Electron wird die Wahl automatisch in der SQLite-Tabelle `settings` gespeichert und vor dem ersten Rendern beim naechsten Start geladen. Standard ist Hellmodus. Schema-Version 2 ergaenzt die Einstellungstabelle und migriert bestehende Projekte ohne Datenverlust. Die Browser-Vorschau unterstuetzt den Wechsel nur fuer die aktuelle Sitzung, ohne SQLite-Persistenz. Falls die Datenbank nicht verfuegbar ist, startet die App im Hellmodus; fehlgeschlagene Speicherung wird am Umschalter angezeigt.
 
 SQLite wird mit der Electron-/Node-Laufzeit ausgeliefert. Kein Datenbankserver und keine Treiberinstallation beim Endnutzer: Beim Start wird `data/catalogdesk.sqlite` im Electron-`userData`-Verzeichnis automatisch angelegt. Die Projektbibliothek zeigt den tatsaechlichen Pfad an. Das App-Paket enthaelt nur Code und Schema, niemals die persoenlichen Datenbanken anderer Nutzer. App-Updates ersetzen diese Datei nicht.
 

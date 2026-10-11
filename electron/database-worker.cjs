@@ -10,7 +10,16 @@ try {
     'Die lokale Datenbank konnte nicht geoeffnet werden. Speicherplatz, Zugriffsrechte und App-Version pruefen.'
 }
 
-const operations = new Set(['list', 'load', 'save', 'delete', 'info', 'close'])
+const operations = new Set([
+  'list',
+  'load',
+  'save',
+  'delete',
+  'info',
+  'close',
+  'getTheme',
+  'setTheme',
+])
 parentPort.on('message', ({ id, operation, payload }) => {
   try {
     if (operation === 'close' && startupError) {
@@ -31,6 +40,7 @@ parentPort.on('message', ({ id, operation, payload }) => {
       'Der Projektstand ist',
       'Maximal ',
       'Ungueltige Projektkennung.',
+      'Ungueltiges Farbschema.',
       'Unbekannte Datenbankoperation.',
     ].some((prefix) => error.message?.startsWith(prefix))
     parentPort.postMessage({

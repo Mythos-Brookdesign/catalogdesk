@@ -24,6 +24,7 @@ const entryUrl = development
   : 'catalog://app/index.html'
 let mainWindow
 let projectDatabase
+let initialTheme = 'light'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -55,7 +56,7 @@ function createWindow() {
     minWidth: 820,
     minHeight: 640,
     title: 'CatalogDesk',
-    backgroundColor: '#f7f8fa',
+    backgroundColor: initialTheme === 'dark' ? '#181c1a' : '#f7f8fa',
     show: false,
     icon: path.join(__dirname, '../public/icon.png'),
     webPreferences: {
@@ -77,7 +78,7 @@ function createWindow() {
   mainWindow.loadURL(entryUrl)
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const shopStore = createShopStore(
     path.join(app.getPath('userData'), 'credentials'),
     safeStorage,
@@ -104,6 +105,25 @@ app.whenReady().then(() => {
   projectDatabase = createDatabaseClient(
     path.join(app.getPath('userData'), 'data', 'catalogdesk.sqlite'),
   )
+  ipcMain.handle('catalog:get-theme', async (event) => {
+    validateSender(event)
+    try {
+      return { ok: true, value: await projectDatabase.request('getTheme') }
+    } catch {
+      return { ok: false, error: 'Farbschema konnte nicht geladen werden.' }
+    }
+  })
+  ipcMain.handle('catalog:set-theme', async (event, theme) => {
+    validateSender(event)
+    try {
+      const value = await projectDatabase.request('setTheme', theme)
+      initialTheme = value
+      mainWindow?.setBackgroundColor(value === 'dark' ? '#181c1a' : '#f7f8fa')
+      return { ok: true, value }
+    } catch {
+      return { ok: false, error: 'Farbschema konnte nicht gespeichert werden.' }
+    }
+  })
   for (const operation of ['list', 'load', 'save', 'delete', 'info']) {
     ipcMain.handle(`catalog:projects-${operation}`, async (event, payload) => {
       validateSender(event)
@@ -232,6 +252,11 @@ app.whenReady().then(() => {
       { role: 'windowMenu' },
     ]),
   )
+  try {
+    initialTheme = await projectDatabase.request('getTheme')
+  } catch {
+    initialTheme = 'light'
+  }
   createWindow()
   app.on('activate', () => {
     if (!BrowserWindow.getAllWindows().length) createWindow()

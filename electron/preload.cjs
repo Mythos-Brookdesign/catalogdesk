@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('catalogDesktop', {
+  getTheme: () => ipcRenderer.invoke('catalog:get-theme'),
+  setTheme: (theme) => ipcRenderer.invoke('catalog:set-theme', theme),
   savedShopConnection: () => ipcRenderer.invoke('catalog:shop-store-summary'),
   saveShopConnection: (payload) =>
     ipcRenderer.invoke('catalog:shop-store-save', payload),
