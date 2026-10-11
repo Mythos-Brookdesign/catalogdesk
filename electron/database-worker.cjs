@@ -19,6 +19,11 @@ const operations = new Set([
   'close',
   'getTheme',
   'setTheme',
+  'startTransfer',
+  'recordTransfer',
+  'finishTransfer',
+  'transferDetail',
+  'listTransfers',
 ])
 parentPort.on('message', ({ id, operation, payload }) => {
   try {
@@ -41,6 +46,7 @@ parentPort.on('message', ({ id, operation, payload }) => {
       'Maximal ',
       'Ungueltige Projektkennung.',
       'Ungueltiges Farbschema.',
+      'Ungueltige Verlaufskennung.',
       'Unbekannte Datenbankoperation.',
     ].some((prefix) => error.message?.startsWith(prefix))
     parentPort.postMessage({

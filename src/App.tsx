@@ -48,6 +48,8 @@ import type { ImportedShop } from './types/desktop'
 import { demoCsv, demoImages, demoName } from './data/demo'
 import { Dialog } from './components/Dialog'
 import { ThemeToggle } from './components/ThemeToggle'
+import { TransferDialog } from './components/TransferDialog'
+import { HistoryDialog } from './components/HistoryDialog'
 import { ProjectsDialog } from './components/ProjectsDialog'
 import type {
   ProjectSnapshot,
@@ -272,6 +274,8 @@ export default function App() {
     null,
   )
   const [shopDialog, setShopDialog] = useState(false)
+  const [transferDialog, setTransferDialog] = useState(false)
+  const [historyDialog, setHistoryDialog] = useState(false)
   const [checkedShop, setCheckedShop] = useState<CheckedShop | null>(null)
   const [profileName, setProfileName] = useState('')
   const [pendingImport, setPendingImport] = useState<ImportFile | null>(null)
@@ -730,6 +734,15 @@ export default function App() {
           </div>
           <div className="topbar-actions">
             <ThemeToggle />
+            <button
+              className="button shop-trigger"
+              aria-label="Uebertragungshistorie"
+              title="Uebertragungshistorie"
+              onClick={() => setHistoryDialog(true)}
+            >
+              <ClipboardList size={16} />
+              <span>Historie</span>
+            </button>
             <button
               className="button shop-trigger"
               aria-label="Importprojekte"
@@ -1510,6 +1523,20 @@ export default function App() {
                     </div>
                     <div className="export-actions">
                       <button
+                        className="button"
+                        disabled={
+                          !window.catalogDesktop ||
+                          busy ||
+                          !analysis ||
+                          analysis.missing.length > 0 ||
+                          !analysis.valid
+                        }
+                        onClick={() => setTransferDialog(true)}
+                      >
+                        <ArrowUpFromLine size={17} />
+                        An WooCommerce uebertragen
+                      </button>
+                      <button
                         className="button primary"
                         disabled={!canExport}
                         onClick={() => void saveExport()}
@@ -1586,6 +1613,25 @@ export default function App() {
             <X size={14} />
           </button>
         </div>
+      )}
+      {transferDialog && analysis && (
+        <TransferDialog
+          products={analysis.rows
+            .filter((row) => !row.excluded && !row.issues.length)
+            .map((row) => ({
+              sku: row.product.sku,
+              price: row.product.price,
+              stock: row.product.stock,
+            }))}
+          onClose={() => setTransferDialog(false)}
+          onHistory={() => {
+            setTransferDialog(false)
+            setHistoryDialog(true)
+          }}
+        />
+      )}
+      {historyDialog && (
+        <HistoryDialog onClose={() => setHistoryDialog(false)} />
       )}
       {shopDialog && (
         <ShopConnectionDialog

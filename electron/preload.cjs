@@ -1,6 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('catalogDesktop', {
+  previewTransfer: (payload) =>
+    ipcRenderer.invoke('catalog:preview-transfer', payload),
+  executeTransfer: (payload) =>
+    ipcRenderer.invoke('catalog:execute-transfer', payload),
+  cancelTransfer: () => ipcRenderer.invoke('catalog:cancel-transfer'),
+  listHistory: (page) => ipcRenderer.invoke('catalog:list-history', page),
+  historyDetail: (id) => ipcRenderer.invoke('catalog:history-detail', id),
+  verifyHistory: (id) => ipcRenderer.invoke('catalog:verify-history', id),
   getTheme: () => ipcRenderer.invoke('catalog:get-theme'),
   setTheme: (theme) => ipcRenderer.invoke('catalog:set-theme', theme),
   savedShopConnection: () => ipcRenderer.invoke('catalog:shop-store-summary'),

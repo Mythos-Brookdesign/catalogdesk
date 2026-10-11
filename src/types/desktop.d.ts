@@ -3,6 +3,66 @@ export type ShopConnection = {
   consumerKey: string
   consumerSecret: string
 }
+export type TransferValues = { regular_price?: string; stock_quantity?: number }
+export type TransferProduct = {
+  id: number
+  sku: string
+  type: string
+  regular_price: string
+  manage_stock: boolean
+  stock_quantity: number | null
+}
+export type TransferEntry = {
+  sku: string
+  before: TransferProduct | null
+  desired: TransferValues
+  status: 'ready' | 'blocked' | 'unchanged'
+  message: string
+}
+export type TransferPlan = {
+  id: string
+  url: string
+  createdAt: string
+  entries: TransferEntry[]
+}
+export type TransferStatus =
+  | 'pending'
+  | 'sending'
+  | 'success'
+  | 'failed'
+  | 'conflict'
+  | 'cancelled'
+  | 'unknown'
+export type TransferItem = {
+  id: string
+  sku: string
+  before: TransferProduct
+  desired: TransferValues
+  observed: TransferProduct | null
+  status: TransferStatus
+  message: string
+}
+export type TransferEvent = {
+  sequence: number
+  itemId: string
+  timestamp: string
+  status: TransferStatus
+  message: string
+  observed: TransferProduct | null
+}
+export type TransferRun = {
+  id: string
+  url: string
+  createdAt: string
+  finishedAt: string | null
+  status: 'running' | 'finished' | 'cancelled' | 'interrupted'
+  items: TransferItem[]
+  events: TransferEvent[]
+}
+export type HistorySummary = Omit<TransferRun, 'items' | 'events'> & {
+  count: number
+  counts: Partial<Record<TransferStatus, number>>
+}
 export type Theme = 'light' | 'dark'
 export type ShopConnectionResult =
   | { ok: true; url: string; productCount: number; checkedAt: string }
@@ -56,6 +116,21 @@ export type DatabaseResult<Value> =
 declare global {
   interface Window {
     catalogDesktop?: {
+      previewTransfer: (payload: {
+        products: { sku: string; price: string; stock: string }[]
+        fields: ('price' | 'stock')[]
+      }) => Promise<DatabaseResult<TransferPlan>>
+      executeTransfer: (payload: {
+        planId: string
+        selected: string[]
+        confirmed: true
+      }) => Promise<DatabaseResult<TransferRun>>
+      cancelTransfer: () => Promise<void>
+      listHistory: (
+        page: number,
+      ) => Promise<DatabaseResult<{ total: number; runs: HistorySummary[] }>>
+      historyDetail: (id: string) => Promise<DatabaseResult<TransferRun>>
+      verifyHistory: (id: string) => Promise<DatabaseResult<TransferRun>>
       getTheme: () => Promise<DatabaseResult<Theme>>
       setTheme: (theme: Theme) => Promise<DatabaseResult<Theme>>
       savedShopConnection: () => Promise<DatabaseResult<{ url: string } | null>>

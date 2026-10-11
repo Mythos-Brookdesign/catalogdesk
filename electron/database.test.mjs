@@ -40,13 +40,78 @@ const snapshot = {
 }
 
 describe('local SQLite projects', () => {
+  it('keeps an immutable transfer event history across reopening and migration from version 2', () => {
+    const filename = location()
+    let database = storage.openDatabase(filename)
+    const saved = database.save({ name: 'Keep', snapshot })
+    database.setTheme('dark')
+    database.close()
+    const old = new DatabaseSync(filename)
+    old.exec(
+      'DROP TABLE transfer_events; DROP TABLE transfer_runs; PRAGMA user_version = 2',
+    )
+    old.close()
+    database = storage.openDatabase(filename)
+    const before = {
+      id: 1,
+      sku: 'A',
+      type: 'simple',
+      regular_price: '10.00',
+      stock_quantity: 2,
+      manage_stock: true,
+    }
+    const run = database.startTransfer({
+      url: 'https://example.com/',
+      entries: [
+        {
+          sku: 'A',
+          before,
+          desired: { regular_price: '12.50' },
+          status: 'ready',
+          message: 'Freigegeben',
+        },
+      ],
+    })
+    database.recordTransfer({
+      runId: run.id,
+      itemId: run.items[0].id,
+      status: 'sending',
+      message: 'Schreibversuch',
+      observed: before,
+    })
+    database.recordTransfer({
+      runId: run.id,
+      itemId: run.items[0].id,
+      status: 'unknown',
+      message: 'Unklar',
+      observed: null,
+    })
+    database.finishTransfer({ id: run.id, status: 'interrupted' })
+    database.close()
+    database = storage.openDatabase(filename)
+    try {
+      expect(database.transferDetail(run.id).events).toHaveLength(2)
+      expect(database.transferDetail(run.id).items[0]).toMatchObject({
+        status: 'unknown',
+        before,
+        desired: { regular_price: '12.50' },
+      })
+      expect(database.listTransfers().runs[0].counts).toEqual({ unknown: 1 })
+      expect(database.getTheme()).toBe('dark')
+      expect(database.load(saved.id).name).toBe('Keep')
+    } finally {
+      database.close()
+    }
+  })
   it('migrates version 1 without losing projects and persists both themes', () => {
     const filename = location()
     let database = storage.openDatabase(filename)
     const saved = database.save({ name: 'Existing import', snapshot })
     database.close()
     const old = new DatabaseSync(filename)
-    old.exec('DROP TABLE settings; PRAGMA user_version = 1')
+    old.exec(
+      'DROP TABLE transfer_events; DROP TABLE transfer_runs; DROP TABLE settings; PRAGMA user_version = 1',
+    )
     old.close()
     database = storage.openDatabase(filename)
     expect(database.getTheme()).toBe('light')
@@ -138,11 +203,11 @@ describe('local SQLite projects', () => {
     const filename = location()
     storage.openDatabase(filename).close()
     const database = new DatabaseSync(filename)
-    database.exec('PRAGMA user_version = 3')
+    database.exec('PRAGMA user_version = 4')
     database.close()
     expect(() => storage.openDatabase(filename)).toThrow('neueren')
     const check = new DatabaseSync(filename)
-    expect(check.prepare('PRAGMA user_version').get().user_version).toBe(3)
+    expect(check.prepare('PRAGMA user_version').get().user_version).toBe(4)
     check.close()
   })
 })

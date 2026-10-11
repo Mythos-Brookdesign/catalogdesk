@@ -28,6 +28,7 @@ Startet Vite und Electron. Nur die Browseransicht: `npm run dev:web`, erreichbar
 - Hell-/Dunkelmodus mit in SQLite gespeicherter Auswahl und Wiederherstellung beim App-Start.
 - WooCommerce-CSV fuer einfache Produkte als Entwuerfe (`Published = -1`) und separater Pruefbericht.
 - Mitgelieferter Beispielkatalog mit 12 Produkten und 5 fehlerhaften Datensaetzen.
+- Bestaetigte Preis-/Bestandsuebertragung an bestehende WooCommerce-Produkte mit Konfliktpruefung und dauerhafter SQLite-Historie.
 
 ## Kurze Demo
 
@@ -47,8 +48,8 @@ React-Oberflaeche
   |-- Web Worker: Papa Parse, Validierung, Aufbereitung, CSV-Ausgabe
   |-- localStorage: versionierte und validierte Zuordnungsprofile
   `-- isolierter Preload: Datei-, Projekt- und Shopmethoden
-       `-- Electron Main: native Dialoge und lesender HTTPS-API-Test
-            `-- Node Worker Thread: SQLite-Projektbibliothek
+       `-- Electron Main: native Dialoge und kontrollierte Shopanfragen
+            `-- Node Worker Thread: SQLite-Projekte, Einstellungen und Historie
 ```
 
 Die fachliche Logik liegt in `src/domain/catalog.ts` und ist unabhaengig von React und Electron testbar. Der Worker verarbeitet auch Exporte ausserhalb des UI-Threads. Veraltete Analyseergebnisse werden ignoriert.
@@ -63,7 +64,7 @@ Die Browseransicht verwendet File APIs und Downloads statt Electron-IPC. Sie die
 - Produktionsassets werden ueber `catalog://app` innerhalb des App-Verzeichnisses geladen; kein privilegiertes `file://`-Frontend.
 - Restriktive Produktions-CSP, keine externen Inhalte, verweigerte Berechtigungen und blockierte Navigation, Popups und Webviews.
 - Spreadsheet-Formeln werden beim CSV-Export neutralisiert. Textwerte mit fuehrendem `=`, `+`, `-` oder `@` koennen deshalb einen Apostroph erhalten. Das verhindert Formelausfuehrung, kann aber solche Sonder-SKUs veraendern; vor dem Shopimport pruefen.
-- Keine Telemetrie oder Produktdaten-Uploads. Schriften und Fotos werden lokal ausgeliefert. Der optionale Shop-Verbindungstest sendet API-Schluessel nur als Authorization-Header an die eingegebene HTTPS-Shopadresse.
+- Keine Telemetrie. Schriften und Fotos werden lokal ausgeliefert. Nur ausdruecklich bestaetigte Uebertragungen senden Preis-/Bestandswerte an den gespeicherten Shop; API-Schluessel bleiben im Authorization-Header und werden nie protokolliert.
 - Gespeicherte Importprojekte bleiben in der lokalen SQLite-Datei erhalten. Nicht gespeicherte Aenderungen gehen beim Schliessen oder Neuladen verloren. Zuordnungsprofile werden weiterhin separat in localStorage gespeichert.
 - Die Quelldatei wird niemals ueberschrieben. Ersatzimports und geaenderte Zuordnungen fragen vor dem Verwerfen manueller Korrekturen nach.
 
@@ -71,7 +72,7 @@ Die Browseransicht verwendet File APIs und Downloads statt Electron-IPC. Sie die
 
 UTF-8, maximal 10 MB und 50.000 Datensaetze pro Import. Fehlende oder doppelte Spaltenueberschriften und uneinheitliche Spaltenzahlen werden abgelehnt. Preise sind nichtnegativ, auf zwei Dezimalstellen und 999.999.999 begrenzt. Artikelnummern werden fuer die Duplikatpruefung ohne Rand-Leerzeichen und ohne Beachtung der Gross-/Kleinschreibung verglichen.
 
-Nur einfache Produkte: keine Varianten, Bilderimporte, schreibende Shop-API, XLSX, automatische Synchronisation oder KI-Korrekturen. Kategorien koennen bereits im WooCommerce-Format (`Wohnen > Licht, Accessoires`) uebergeben werden. Eigene Steuer-, Versand- und Importregeln des Shops werden nicht geprueft.
+Nur einfache Produkte: keine Varianten, Bilderimporte, XLSX, automatische Synchronisation oder KI-Korrekturen. Schreibzugriffe sind auf bestaetigte Preis-/Bestandsaenderungen an bestehenden einfachen Shopprodukten begrenzt. Kategorien koennen fuer CSV-Exporte bereits im WooCommerce-Format (`Wohnen > Licht, Accessoires`) uebergeben werden. Eigene Steuer-, Versand- und Importregeln des Shops werden nicht geprueft.
 
 ## Lokale SQLite-Projekte
 
@@ -108,7 +109,23 @@ HTTPS-Zertifikate muessen regulaer vertrauenswuerdig sein; fuer Local das eigene
 
 Genau eine Shopverbindung wird bei ausdruecklichem Speichern mit Electron `safeStorage` verschluesselt, atomar in `credentials/shop-connection.enc` unter `userData` abgelegt und nur im Hauptprozess entschluesselt. Der Verschluesselungsschluessel wird durch macOS-Keychain, Windows-DPAPI oder einen unterstuetzten Linux-Geheimnisspeicher geschuetzt. Linux `basic_text`, unbekannte Backends und fehlende Verschluesselung werden abgewiesen: kein Klartext-Fallback. Weder SQLite noch localStorage enthalten API-Schluessel. Die Lade-API gibt nur die Shopadresse zurueck; entschluesselte Schluessel werden nicht an den Renderer ausgeliefert. Unter Windows schuetzt DPAPI vor anderen Benutzern, nicht grundsaetzlich vor Anwendungen desselben Benutzers. Auf macOS kann der Keychain-Zugriff eine Betriebssystemabfrage ausloesen; konsistente Codesignierung ist fuer zuverlaessigen Zugriff nach Updates notwendig. Dieser lokale Build ist weiterhin unsigniert. Die verschluesselte Datei ist nicht als portables Zugangsdatenbackup geeignet.
 
-Nicht gespeicherte Eingaben bleiben nur waehrend des offenen Dialogs im Arbeitsspeicher; nach erfolgreicher Anfrage oder Schliessen werden sie verworfen. Das Pruefergebnis bleibt bis zum Neuladen sichtbar, ohne eine dauerhafte Netzwerkverbindung aufzubauen. Im Browser ist die Maske gesperrt. Ein Produktvergleich und Schreibzugriffe sind noch nicht implementiert. Importtests simulieren die HTTPS-Shopantworten; Electron-IPC, Mapping, Analyse und SQLite laufen tatsaechlich. Der Persistenztest nutzt echte Systemspeicher-Verschluesselung und prueft Wiederverwendung nach einem Neustart. Ein authentifizierter Import aus deinem lokalen Shop muss noch mit deinen lokal eingegebenen Schluesseln geprueft werden.
+Nicht gespeicherte Eingaben bleiben nur waehrend des offenen Dialogs im Arbeitsspeicher; nach erfolgreicher Anfrage oder Schliessen werden sie verworfen. Das Pruefergebnis bleibt bis zum Neuladen sichtbar, ohne eine dauerhafte Netzwerkverbindung aufzubauen. Im Browser ist die Maske gesperrt. Import- und Uebertragungstests simulieren die HTTPS-Shopantworten; Electron-IPC, Mapping, Analyse und SQLite laufen tatsaechlich. Der Persistenztest nutzt echte Systemspeicher-Verschluesselung und prueft Wiederverwendung nach einem Neustart. Authentifizierter Import und Schreibzugriffe auf deinen echten Shop muessen noch mit deinen lokal eingegebenen Schluesseln auf Staging geprueft werden.
+
+## Shopuebertragung und Historie
+
+1. Fuer Schreibzugriffe in WooCommerce einen separaten API-Schluessel mit **Lesen/Schreiben** erzeugen und lokal als Shopverbindung speichern. Keine Schluessel in Chat oder Repository eingeben.
+2. CSV/Shopdaten importieren oder gespeichertes Projekt oeffnen und korrigieren.
+3. Im **Export** auf **An WooCommerce uebertragen** klicken. Gueltige, nicht ausgeschlossene Datensaetze werden beruecksichtigt; Suche und Tabellenfilter begrenzen diese Auswahl nicht. Pro Lauf maximal 100 aktive gueltige Produkte, bei groesseren Katalogen weitere Datensaetze ausschliessen.
+4. **Preis** und/oder **Bestand** auswaehlen und **Shopvorschau laden**. Nur bestehende eindeutige SKUs und einfache Produkttypen werden freigegeben. Bei Bestand muss die Bestandsverwaltung bereits aktiv sein; leere Bestandsfelder werden nicht geschrieben.
+5. Gewuenschte Produkte einzeln ankreuzen, **Produkte freigeben** und **Bestaetigen und uebertragen**. Vor dieser letzten Bestaetigung erfolgen keinerlei PUT-Anfragen. Die Vorschau ist zehn Minuten gueltig und wird nach einem Schreibauftrag verbraucht.
+
+Nur veraenderte `regular_price`- und `stock_quantity`-Werte werden per `PUT /wc/v3/products/{id}` geschrieben. Keine neuen Produkte, keine Aenderung von Name, Beschreibung, Kategorien, Veroeffentlichung, Sonderpreis oder Bestandsverwaltungsmodus. Vor jedem PUT werden Produktidentitaet und die in der Vorschau betroffenen Shopwerte erneut gelesen. Abweichungen ergeben einen Konflikt ohne Schreibzugriff. Die WooCommerce-API bietet hier kein atomisches Compare-and-Swap: Zwischen Lesen und Schreiben bleibt ein kleines Konfliktfenster. Deshalb auf Staging testen und parallele Shopbearbeitung fuer diese Produkte vermeiden. Laufende Aktionen lassen sich abbrechen; bereits geschriebene Produkte werden nicht automatisch zurueckgesetzt.
+
+Schema-Version 3 ergaenzt `transfer_runs` und append-only `transfer_events`, ohne Projekte oder Theme-Einstellungen zu veraendern. Nach Freigabe wird der Lauf mit Shopadresse, Zeitpunkt, Produkt-ID/SKU, vorherigen Werten und gewuenschten Werten gespeichert. Jeder Schreibversuch wird vor dem Netzwerkanruf dauerhaft als `sending` protokolliert. Kann die Historie nicht gespeichert werden, erfolgt kein weiterer PUT. Ergebnisse und beobachtete Shopwerte werden als neue Ereignisse angehaengt; vorhandene Ereignisse werden nicht ueberschrieben. Die Historie ist eine lokale Betriebshistorie, kein manipulationssicheres Compliance-Audit.
+
+Erfolgreiche Antworten werden durch erneutes GET bestaetigt. Nach Netzwerkfehlern, Timeouts oder unklaren Serverantworten wird ebenfalls nur gelesen, niemals blind erneut geschrieben. Stimmen die Zielwerte, wird das Ergebnis als bestaetigt dokumentiert. Andernfalls bleibt es **Unklar**, und weitere Produkte dieses Laufs werden nicht geschrieben. In der **Historie** lassen sich unklare beziehungsweise beim App-Absturz unbestaetigt gebliebene Schreibversuche erneut lesend pruefen. Die Nachpruefung bestaetigt den aktuellen Wert, nicht zwingend dessen Verursacher. Noch laufend markierte oder nicht abgeschlossene Laeufe werden sichtbar erhalten, nicht automatisch wiederholt. Rechtefehler, Konflikte, Abbrueche und Lesefehler vor dem Schreiben werden ebenfalls dokumentiert.
+
+Die Historie bleibt nach Neustarts erhalten, ist seitenweise durchsuchbar ueber die Lauf-Liste und zeigt die Details jedes Produkts samt Ereigniszeitpunkten. Sie protokolliert aktuell nur bestaetigte Shopuebertragungen, nicht jede Eingabe, CSV-Ausgabe, Vorschau oder jeden Import. Es gibt keinen automatischen Rollback und keinen Loesch-/Exportbefehl fuer die Historie. Einzelne API-Anfragen haben ein Zeitlimit von 15 Sekunden und ein Antwortlimit von 256 KB. Ein Abbruch waehrend eines Schreibversuchs fuehrt zuerst zu einer lesenden Ergebnispruefung; das Schliessen der App wartet auf deren Abschluss, bevor die Datenbank geschlossen wird.
 
 Der CSV-Vertrag richtet sich nach dem [offiziellen WooCommerce-Schema](https://woocommerce.com/document/product-csv-importer-exporter/). Eine echte WooCommerce-Staging-Instanz wurde nicht angebunden; vor einem produktiven Import eine kleine Testdatei auf Staging pruefen.
 

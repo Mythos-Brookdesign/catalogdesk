@@ -17,6 +17,11 @@ const { testConnection } = require('./shop.cjs')
 const { importShopProducts } = require('./shop-import.cjs')
 const { createDatabaseClient } = require('./database-client.cjs')
 const { createShopStore } = require('./shop-store.cjs')
+const {
+  previewTransfer,
+  executeTransfer,
+  verifyTransfer,
+} = require('./shop-transfer.cjs')
 
 const development = !app.isPackaged && process.argv.includes('--dev')
 const entryUrl = development
@@ -25,6 +30,8 @@ const entryUrl = development
 let mainWindow
 let projectDatabase
 let initialTheme = 'light'
+let transferController = null
+let transferPromise = null
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -186,9 +193,131 @@ app.whenReady().then(async () => {
   })
   let connectionTestRunning = false
   let shopImportController = null
+  let transferPlan = null
+  function transferBusy() {
+    return Boolean(transferController)
+  }
+  ipcMain.handle('catalog:preview-transfer', async (event, payload) => {
+    validateSender(event)
+    if (connectionTestRunning || shopImportController || transferBusy())
+      return { ok: false, error: 'Eine Shopanfrage laeuft bereits.' }
+    transferPlan = null
+    const controller = new AbortController()
+    transferController = controller
+    try {
+      const connection = await shopCredentials(null)
+      transferPromise = previewTransfer(
+        connection,
+        payload,
+        (url, options) => net.fetch(url, options),
+        controller.signal,
+      )
+      const plan = await transferPromise
+      transferPlan = { plan, expires: Date.now() + 10 * 60_000 }
+      return { ok: true, value: plan }
+    } catch {
+      return {
+        ok: false,
+        error:
+          'Vorschau konnte nicht geladen werden. Gespeicherte Shopverbindung, Leserechte und Auswahl pruefen (maximal 100 Produkte).',
+      }
+    } finally {
+      transferController = null
+      transferPromise = null
+    }
+  })
+  ipcMain.handle('catalog:execute-transfer', async (event, payload) => {
+    validateSender(event)
+    if (connectionTestRunning || shopImportController || transferBusy())
+      return { ok: false, error: 'Eine Shopanfrage laeuft bereits.' }
+    if (
+      !transferPlan ||
+      !payload ||
+      payload.confirmed !== true ||
+      payload.planId !== transferPlan.plan.id ||
+      Date.now() > transferPlan.expires
+    )
+      return {
+        ok: false,
+        error:
+          'Freigabe fehlt oder Vorschau ist abgelaufen. Bitte Vorschau erneut laden.',
+      }
+    const cached = transferPlan.plan
+    transferPlan = null
+    const controller = new AbortController()
+    transferController = controller
+    try {
+      const connection = await shopCredentials(null)
+      transferPromise = executeTransfer(
+        connection,
+        cached,
+        payload.selected,
+        (url, options) => net.fetch(url, options),
+        (operation, input) => projectDatabase.request(operation, input),
+        { signal: controller.signal },
+      )
+      return { ok: true, value: await transferPromise }
+    } catch {
+      return {
+        ok: false,
+        error:
+          'Uebertragung nicht vollstaendig abgeschlossen. Shopverbindung und Historie pruefen; unklare Schreibversuche nicht blind wiederholen.',
+      }
+    } finally {
+      transferController = null
+      transferPromise = null
+    }
+  })
+  ipcMain.handle('catalog:cancel-transfer', (event) => {
+    validateSender(event)
+    transferController?.abort()
+  })
+  for (const [channel, operation] of [
+    ['list-history', 'listTransfers'],
+    ['history-detail', 'transferDetail'],
+  ]) {
+    ipcMain.handle(`catalog:${channel}`, async (event, payload) => {
+      validateSender(event)
+      try {
+        return {
+          ok: true,
+          value: await projectDatabase.request(operation, payload),
+        }
+      } catch {
+        return { ok: false, error: 'Historie konnte nicht geladen werden.' }
+      }
+    })
+  }
+  ipcMain.handle('catalog:verify-history', async (event, id) => {
+    validateSender(event)
+    if (connectionTestRunning || shopImportController || transferBusy())
+      return { ok: false, error: 'Eine Shopanfrage laeuft bereits.' }
+    const controller = new AbortController()
+    transferController = controller
+    try {
+      const connection = await shopCredentials(null)
+      const run = await projectDatabase.request('transferDetail', id)
+      transferPromise = verifyTransfer(
+        connection,
+        run,
+        (url, options) => net.fetch(url, options),
+        (operation, input) => projectDatabase.request(operation, input),
+      )
+      return { ok: true, value: await transferPromise }
+    } catch {
+      return {
+        ok: false,
+        error:
+          'Nachpruefung fehlgeschlagen. Gespeicherte Verbindung muss zum Shop des Verlaufs passen.',
+      }
+    } finally {
+      transferController = null
+      transferPromise = null
+    }
+  })
   ipcMain.handle('catalog:test-shop', async (event, payload) => {
     validateSender(event)
-    if (connectionTestRunning || shopImportController)
+    if (connectionTestRunning || shopImportController || transferBusy())
       return { ok: false, error: 'Ein Verbindungstest laeuft bereits.' }
     connectionTestRunning = true
     try {
@@ -204,7 +333,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('catalog:import-shop', async (event, payload) => {
     validateSender(event)
-    if (connectionTestRunning || shopImportController)
+    if (connectionTestRunning || shopImportController || transferBusy())
       return { ok: false, error: 'Eine Shopanfrage laeuft bereits.' }
     const controller = new AbortController()
     shopImportController = controller
@@ -272,8 +401,10 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   if (databaseClosing) return
   databaseClosing = true
-  projectDatabase
-    .close()
+  transferController?.abort()
+  Promise.resolve(transferPromise)
+    .catch(() => {})
+    .then(() => projectDatabase.close())
     .catch(() => {})
     .finally(() => {
       databaseClosed = true

@@ -12,7 +12,7 @@ it('opens SQLite in a background thread and safely reports startup failures', as
       path.join(directory, 'data', 'catalogdesk.sqlite'),
     )
     expect(await database.request('list')).toEqual([])
-    expect(await database.request('info')).toMatchObject({ schemaVersion: 2 })
+    expect(await database.request('info')).toMatchObject({ schemaVersion: 3 })
     expect(await database.request('getTheme')).toBe('light')
     expect(await database.request('setTheme', 'dark')).toBe('dark')
     await expect(

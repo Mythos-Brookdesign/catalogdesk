@@ -23,6 +23,151 @@
   position: relative;
   flex-shrink: 0;
 }
+.dialog:has(.transfer-dialog) {
+  width: 920px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+.transfer-note {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+.transfer-fields {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  font-size: 12px;
+}
+.transfer-fields label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.transfer-table {
+  min-width: 600px;
+  font-size: 12px;
+}
+.transfer-table td {
+  vertical-align: top;
+  white-space: normal;
+}
+.transfer-table small {
+  display: block;
+  max-width: 280px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-top: 5px;
+}
+.transfer-values {
+  display: grid;
+  gap: 8px;
+}
+.transfer-values > span {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+}
+.transfer-values strong {
+  font-size: 10px;
+  color: var(--muted);
+  width: 43px;
+}
+.transfer-values b {
+  color: var(--green);
+  font-weight: 500;
+}
+.transfer-confirm {
+  margin-top: 20px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.transfer-confirm h3 {
+  padding: 0;
+  margin: 0 0 10px;
+  border: 0;
+}
+.transfer-confirm p {
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.transfer-results,
+.history-runs {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+.transfer-results li {
+  display: flex;
+  align-items: start;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.transfer-results li > span:last-child {
+  flex-basis: 100%;
+  color: var(--muted);
+}
+.history-runs button {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 16px 10px;
+  text-align: left;
+  font-size: 12px;
+}
+.history-runs span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.history-events {
+  padding-left: 20px;
+  font-size: 12px;
+}
+.history-events li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.history-events :is(time, strong, span) {
+  display: block;
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
+.history-events time,
+.history-events span {
+  color: var(--muted);
+}
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  .topbar .breadcrumb > span,
+  .topbar .breadcrumb > svg {
+    display: none;
+  }
+  .topbar .breadcrumb {
+    min-width: 0;
+  }
+  .topbar-actions {
+    gap: 4px;
+  }
+}
 .theme-toggle {
   display: flex;
   border: 1px solid var(--line);

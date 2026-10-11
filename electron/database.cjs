@@ -79,6 +79,50 @@ const saveProjectSchema = z
     'Revision required for updates',
   )
 const idSchema = z.string().uuid()
+const shopProductSchema = z
+  .object({
+    id: z.number().int().positive(),
+    sku: z.string().max(255),
+    type: z.string().max(80),
+    regular_price: z.string().max(80),
+    manage_stock: z.boolean(),
+    stock_quantity: z.number().int().safe().nullable(),
+  })
+  .strict()
+const desiredSchema = z
+  .object({
+    regular_price: z
+      .string()
+      .regex(/^\d+\.\d{2}$/)
+      .optional(),
+    stock_quantity: z.number().int().nonnegative().safe().optional(),
+  })
+  .strict()
+const transferEntrySchema = z
+  .object({
+    sku: z.string().min(1).max(255),
+    before: shopProductSchema,
+    desired: desiredSchema,
+    status: z.literal('ready'),
+    message: z.string().max(500),
+  })
+  .strict()
+const transferEventSchema = z
+  .object({
+    runId: idSchema,
+    itemId: idSchema,
+    status: z.enum([
+      'sending',
+      'success',
+      'failed',
+      'conflict',
+      'cancelled',
+      'unknown',
+    ]),
+    message: z.string().max(1000),
+    observed: shopProductSchema.nullable(),
+  })
+  .strict()
 
 function openDatabase(filename) {
   mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 })
@@ -89,7 +133,7 @@ function openDatabase(filename) {
     )
     database.exec('BEGIN IMMEDIATE')
     const version = database.prepare('PRAGMA user_version').get().user_version
-    if (version > 2)
+    if (version > 3)
       throw new Error(
         'Diese Datenbank wurde mit einer neueren App-Version erstellt.',
       )
@@ -115,6 +159,20 @@ function openDatabase(filename) {
       ) STRICT;
       INSERT INTO settings VALUES ('theme', 'light');
       PRAGMA user_version = 2;`)
+    }
+    if (version < 3) {
+      database.exec(`CREATE TABLE transfer_runs (
+        id TEXT PRIMARY KEY, url TEXT NOT NULL, created_at TEXT NOT NULL,
+        finished_at TEXT, status TEXT NOT NULL, items TEXT NOT NULL CHECK(json_valid(items))
+      ) STRICT;
+      CREATE TABLE transfer_events (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL REFERENCES transfer_runs(id), item_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL, status TEXT NOT NULL, message TEXT NOT NULL,
+        observed TEXT CHECK(observed IS NULL OR json_valid(observed))
+      ) STRICT;
+      CREATE INDEX transfer_events_run ON transfer_events(run_id, sequence);
+      PRAGMA user_version = 3;`)
     }
     database.exec('COMMIT')
   } catch (error) {
@@ -147,7 +205,129 @@ function openDatabase(filename) {
     return { ...row, snapshot: snapshotSchema.parse(JSON.parse(row.snapshot)) }
   }
 
+  function transferDetail(id) {
+    const row = database
+      .prepare(
+        'SELECT id, url, created_at AS createdAt, finished_at AS finishedAt, status, items FROM transfer_runs WHERE id = ?',
+      )
+      .get(idSchema.parse(id))
+    if (!row) throw new Error('Ungueltige Verlaufskennung.')
+    const events = database
+      .prepare(
+        'SELECT sequence, item_id AS itemId, timestamp, status, message, observed FROM transfer_events WHERE run_id = ? ORDER BY sequence',
+      )
+      .all(id)
+      .map((event) => ({
+        ...event,
+        observed: event.observed ? JSON.parse(event.observed) : null,
+      }))
+    const latest = new Map(events.map((event) => [event.itemId, event]))
+    const items = JSON.parse(row.items).map((item) => ({
+      ...item,
+      status: latest.get(item.id)?.status ?? 'pending',
+      message: latest.get(item.id)?.message ?? 'Noch kein Schreibversuch.',
+      observed: latest.get(item.id)?.observed ?? null,
+    }))
+    return { ...row, items, events }
+  }
+
   return {
+    startTransfer(payload) {
+      const parsed = z
+        .object({
+          url: z.string().url().max(2048),
+          entries: z.array(transferEntrySchema).min(1).max(100),
+        })
+        .strict()
+        .parse(payload)
+      const url = new URL(parsed.url)
+      if (
+        url.protocol !== 'https:' ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash
+      )
+        throw new Error('Ungueltige Shopadresse im Verlauf.')
+      const id = randomUUID()
+      const items = parsed.entries.map((entry) => ({
+        ...entry,
+        id: randomUUID(),
+      }))
+      database
+        .prepare('INSERT INTO transfer_runs VALUES (?, ?, ?, NULL, ?, ?)')
+        .run(
+          id,
+          url.toString(),
+          new Date().toISOString(),
+          'running',
+          JSON.stringify(items),
+        )
+      return transferDetail(id)
+    },
+    recordTransfer(payload) {
+      const parsed = transferEventSchema.parse(payload)
+      const run = transferDetail(parsed.runId)
+      if (!run.items.some((item) => item.id === parsed.itemId))
+        throw new Error('Ungueltige Verlaufskennung.')
+      database
+        .prepare(
+          'INSERT INTO transfer_events (run_id, item_id, timestamp, status, message, observed) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          parsed.runId,
+          parsed.itemId,
+          new Date().toISOString(),
+          parsed.status,
+          parsed.message,
+          parsed.observed ? JSON.stringify(parsed.observed) : null,
+        )
+      return true
+    },
+    finishTransfer(payload) {
+      const parsed = z
+        .object({
+          id: idSchema,
+          status: z.enum(['finished', 'cancelled', 'interrupted']),
+        })
+        .strict()
+        .parse(payload)
+      database
+        .prepare(
+          'UPDATE transfer_runs SET status = ?, finished_at = ? WHERE id = ?',
+        )
+        .run(parsed.status, new Date().toISOString(), parsed.id)
+      return true
+    },
+    transferDetail,
+    listTransfers(page = 0) {
+      const offset = z.number().int().min(0).max(1_000_000).parse(page) * 20
+      const rows = database
+        .prepare(
+          'SELECT id FROM transfer_runs ORDER BY created_at DESC, id DESC LIMIT 20 OFFSET ?',
+        )
+        .all(offset)
+      return {
+        total: database
+          .prepare('SELECT COUNT(*) AS total FROM transfer_runs')
+          .get().total,
+        runs: rows.map((row) => {
+          const run = transferDetail(row.id)
+          const counts = {}
+          for (const item of run.items)
+            counts[item.status] = (counts[item.status] ?? 0) + 1
+          return {
+            id: run.id,
+            url: run.url,
+            createdAt: run.createdAt,
+            finishedAt: run.finishedAt,
+            status: run.status,
+            count: run.items.length,
+            counts,
+          }
+        }),
+      }
+    },
     getTheme: () =>
       database.prepare("SELECT value FROM settings WHERE key = 'theme'").get()
         ?.value ?? 'light',
@@ -225,7 +405,7 @@ function openDatabase(filename) {
         )
       return true
     },
-    info: () => ({ path: filename, schemaVersion: 2 }),
+    info: () => ({ path: filename, schemaVersion: 3 }),
     close: () => database.close(),
   }
 }

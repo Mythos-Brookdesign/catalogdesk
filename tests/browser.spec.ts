@@ -2,6 +2,30 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import Papa from 'papaparse'
 
+test('shows history safely in both browser themes without overflow', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/')
+  for (const theme of ['Hellmodus', 'Dunkelmodus']) {
+    await page.getByRole('button', { name: theme, exact: true }).click()
+    await page
+      .getByRole('button', { name: 'Uebertragungshistorie', exact: true })
+      .click()
+    await expect(page.getByRole('dialog')).toContainText(
+      'nur in der Electron-App',
+    )
+    await page.screenshot({ path: testInfo.outputPath(`history-${theme}.png`) })
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true)
+    await page.keyboard.press('Escape')
+  }
+})
+
 test('switches light and dark views without layout overflow', async ({
   page,
 }, testInfo) => {
