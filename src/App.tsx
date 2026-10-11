@@ -44,6 +44,7 @@ import type {
   Options,
   Product,
 } from './domain/catalog'
+import type { ImportedShop } from './types/desktop'
 import { demoCsv, demoImages, demoName } from './data/demo'
 import { Dialog } from './components/Dialog'
 import { ProjectsDialog } from './components/ProjectsDialog'
@@ -273,6 +274,9 @@ export default function App() {
   const [checkedShop, setCheckedShop] = useState<CheckedShop | null>(null)
   const [profileName, setProfileName] = useState('')
   const [pendingImport, setPendingImport] = useState<ImportFile | null>(null)
+  const [pendingShopImport, setPendingShopImport] =
+    useState<ImportedShop | null>(null)
+  const [shopImportNotice, setShopImportNotice] = useState('')
   const [pendingMapping, setPendingMapping] = useState<{
     mapping: Mapping
     options: Options
@@ -338,6 +342,7 @@ export default function App() {
           'Die Datei ist nicht gueltig UTF-8-kodiert. Bitte als UTF-8-CSV speichern.',
         )
       const parsed = await request<Dataset>('parse', file.content)
+      setShopImportNotice('')
       setDataset(parsed)
       setActiveProject(null)
       setSavedSnapshot(null)
@@ -369,6 +374,7 @@ export default function App() {
   }
 
   function restoreProject(project: SavedProject) {
+    setShopImportNotice('')
     const saved = project.snapshot
     setDataset(saved.dataset)
     setFilename(saved.filename)
@@ -395,6 +401,43 @@ export default function App() {
     setProjectsDialog(false)
     if (projectDirty) setPendingProject(project)
     else restoreProject(project)
+  }
+
+  function applyShopImport(result: ImportedShop) {
+    setDataset(result.dataset)
+    setFilename(`woocommerce-${new URL(result.url).hostname}.csv`)
+    setIsDemo(false)
+    setMapping(suggestMapping(result.dataset.headers))
+    setOptions({ ...defaultOptions, priceFormat: 'en' })
+    setEdits({})
+    setExcluded([])
+    setActiveProject(null)
+    setSavedSnapshot(null)
+    setProfileId('')
+    invalidateAnalysis()
+    setFilter('all')
+    setSearch('')
+    setPage(0)
+    setSort('source')
+    setSelected(null)
+    setView('catalog')
+    setError('')
+    const skipped = result.skipped.reduce(
+      (count, entry) => count + entry.count,
+      0,
+    )
+    setShopImportNotice(
+      `${formatNumber(result.imported)} einfache Produkte aus ${result.url} importiert. ${skipped ? `${formatNumber(skipped)} Produkte uebersprungen: ${result.skipped.map((entry) => `${entry.type} (${entry.count})`).join(', ')}.` : 'Keine Produkte uebersprungen.'} Der Shop wurde nicht veraendert.`,
+    )
+    setToast(
+      'WooCommerce-Katalog importiert. Arbeitsstand noch nicht gespeichert.',
+    )
+  }
+
+  function receiveShopImport(result: ImportedShop) {
+    setShopDialog(false)
+    if (dataset && (dirty || projectDirty)) setPendingShopImport(result)
+    else applyShopImport(result)
   }
 
   async function readBrowserFile(file?: File) {
@@ -703,6 +746,7 @@ export default function App() {
               onClick={() => setShopDialog(true)}
               title="WooCommerce-Shopverbindung"
               aria-label="Shopverbindung"
+              disabled={busy}
             >
               {checkedShop ? <CheckCircle2 size={16} /> : <PlugZap size={16} />}
               <span>Shopverbindung</span>
@@ -763,6 +807,20 @@ export default function App() {
           </div>
         </div>
 
+        {shopImportNotice && (
+          <div className="banner shop-import-notice" role="status">
+            <CheckCircle2 size={18} />
+            <span>{shopImportNotice}</span>
+            <button
+              className="icon-button"
+              title="Importmeldung schliessen"
+              aria-label="Importmeldung schliessen"
+              onClick={() => setShopImportNotice('')}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
         {error && (
           <div className="banner danger" role="alert">
             <CircleAlert size={18} />
@@ -1531,8 +1589,38 @@ export default function App() {
         <ShopConnectionDialog
           checked={checkedShop}
           onChecked={setCheckedShop}
+          onImported={receiveShopImport}
           onClose={() => setShopDialog(false)}
         />
+      )}
+      {pendingShopImport && (
+        <Dialog
+          title="Import ersetzen?"
+          onClose={() => setPendingShopImport(null)}
+        >
+          <p>
+            Nicht gespeicherte Daten, Korrekturen und Ausschluesse werden durch
+            den WooCommerce-Import ersetzt. Gespeicherte Projekte bleiben
+            erhalten.
+          </p>
+          <div className="dialog-actions">
+            <button
+              className="button"
+              onClick={() => setPendingShopImport(null)}
+            >
+              Abbrechen
+            </button>
+            <button
+              className="button primary"
+              onClick={() => {
+                applyShopImport(pendingShopImport)
+                setPendingShopImport(null)
+              }}
+            >
+              Shopimport uebernehmen
+            </button>
+          </div>
+        </Dialog>
       )}
       {projectsDialog && (
         <ProjectsDialog

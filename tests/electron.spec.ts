@@ -4,6 +4,376 @@ import path from 'node:path'
 import os from 'node:os'
 import Papa from 'papaparse'
 
+test('remembers encrypted shop credentials across restarts without exposing them to the renderer', async ({
+  playwright,
+}, testInfo) => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), 'catalogdesk-persistent-shop-'),
+  )
+  const launch = () =>
+    playwright._electron.launch({
+      args: ['.'],
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '',
+        CATALOGDESK_TEST_USER_DATA: directory,
+      },
+    })
+  let application = await launch()
+  const key = 'ck_' + 'c'.repeat(40)
+  const secret = 'cs_' + 'd'.repeat(40)
+  try {
+    let page = await application.firstWindow()
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    let dialog = page.getByRole('dialog')
+    await expect(
+      dialog.getByLabel('Consumer Key', { exact: true }),
+    ).toBeEnabled()
+    await dialog.getByLabel('Consumer Key', { exact: true }).fill(key)
+    await dialog.getByLabel('Consumer Secret', { exact: true }).fill(secret)
+    await dialog
+      .getByRole('button', { name: 'Verbindung speichern', exact: true })
+      .click()
+    await expect(dialog.getByRole('status')).toContainText('sicher gespeichert')
+    await expect(
+      dialog.getByLabel('Consumer Secret', { exact: true }),
+    ).toHaveValue('')
+    const file = await readFile(
+      path.join(directory, 'credentials', 'shop-connection.enc'),
+    )
+    expect(file.includes(Buffer.from(secret))).toBe(false)
+    expect(file.includes(Buffer.from(key))).toBe(false)
+    await application.close()
+    application = await launch()
+    page = await application.firstWindow()
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    dialog = page.getByRole('dialog')
+    await expect(
+      dialog.getByRole('button', { name: 'Verbindung pruefen', exact: true }),
+    ).toBeEnabled()
+    expect(
+      await page.evaluate(() => window.catalogDesktop!.savedShopConnection()),
+    ).toEqual({ ok: true, value: { url: 'https://catalogdesk.local/' } })
+    await expect(
+      dialog.getByLabel('Consumer Secret', { exact: true }),
+    ).toHaveValue('')
+    await application.evaluate(({ net }) => {
+      net.fetch = async (input, options) => {
+        const expected =
+          'Basic ' +
+          Buffer.from(
+            'ck_' + 'c'.repeat(40) + ':' + 'cs_' + 'd'.repeat(40),
+          ).toString('base64')
+        if (
+          !String(input).startsWith('https://catalogdesk.local/') ||
+          options?.headers?.Authorization !== expected
+        )
+          throw new Error('Invalid credentials or host')
+        const importing =
+          new URL(String(input)).searchParams.get('per_page') === '100'
+        const item = importing
+          ? {
+              id: 1,
+              type: 'simple',
+              sku: 'SAVED-1',
+              name: 'Saved Connection',
+              regular_price: '19.90',
+              description: '',
+              manage_stock: false,
+              stock_quantity: null,
+              categories: [],
+            }
+          : { id: 1, sku: 'SAVED-1' }
+        return new Response(JSON.stringify([item]), {
+          headers: {
+            'content-type': 'application/json',
+            'x-wp-total': '1',
+            'x-wp-totalpages': '1',
+          },
+        })
+      }
+    })
+    await dialog
+      .getByLabel('Shopadresse (HTTPS)')
+      .fill('https://different.example')
+    await expect(
+      dialog.getByRole('button', { name: 'Verbindung pruefen', exact: true }),
+    ).toBeDisabled()
+    await dialog
+      .getByLabel('Shopadresse (HTTPS)')
+      .fill('https://catalogdesk.local/')
+    await dialog
+      .getByRole('button', { name: 'Verbindung pruefen', exact: true })
+      .click()
+    await expect(dialog.getByRole('status')).toContainText('1 Produkte')
+    await page.screenshot({ path: testInfo.outputPath('persistent-shop.png') })
+    await dialog
+      .getByRole('button', { name: 'Produkte importieren', exact: true })
+      .click()
+    await expect(page.locator('.product-table tbody tr').first()).toContainText(
+      'SAVED-1',
+    )
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    await dialog
+      .getByRole('button', {
+        name: 'Gespeicherte Verbindung loeschen',
+        exact: true,
+      })
+      .click()
+    await dialog
+      .getByRole('button', {
+        name: 'Verbindung endgueltig loeschen',
+        exact: true,
+      })
+      .click()
+    await expect(
+      dialog.getByRole('button', { name: 'Verbindung pruefen', exact: true }),
+    ).toBeDisabled()
+    expect(
+      await page.evaluate(() => window.catalogDesktop!.savedShopConnection()),
+    ).toEqual({ ok: true, value: null })
+  } finally {
+    await application.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('imports all WooCommerce pages with decimal prices and saves the catalog in SQLite', async ({
+  playwright,
+}, testInfo) => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), 'catalogdesk-shop-import-'),
+  )
+  const application = await playwright._electron.launch({
+    args: ['.'],
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '',
+      CATALOGDESK_TEST_USER_DATA: directory,
+    },
+  })
+  try {
+    const page = await application.firstWindow()
+    await application.evaluate(({ net }) => {
+      const originalFetch = net.fetch.bind(net)
+      net.fetch = async (input, options) => {
+        const url = new URL(String(input))
+        if (url.origin !== 'https://catalogdesk.local')
+          return originalFetch(input, options)
+        if (
+          options?.method !== 'GET' ||
+          options.redirect !== 'error' ||
+          url.searchParams.get('per_page') !== '100' ||
+          url.searchParams.get('status') !== 'any'
+        )
+          throw new Error('Unexpected request')
+        const pageNumber = Number(url.searchParams.get('page'))
+        const data = Array.from(
+          { length: pageNumber === 1 ? 100 : 2 },
+          (_, index) => {
+            const id = (pageNumber - 1) * 100 + index + 1
+            if (id === 2) return { id, type: 'variable' }
+            return {
+              id,
+              type: 'simple',
+              sku: `SHOP-${id}`,
+              name: `Shop Product ${id}`,
+              regular_price: '12.50',
+              description: '<p>Beschreibung</p>',
+              manage_stock: true,
+              stock_quantity: 4,
+              categories: [{ id: 1, name: 'Papeterie' }],
+            }
+          },
+        )
+        return new Response(JSON.stringify(data), {
+          headers: {
+            'content-type': 'application/json',
+            'x-wp-total': '102',
+            'x-wp-totalpages': '2',
+          },
+        })
+      }
+    })
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    let dialog = page.getByRole('dialog')
+    await dialog
+      .getByLabel('Consumer Key', { exact: true })
+      .fill('ck_' + 'a'.repeat(40))
+    await dialog
+      .getByLabel('Consumer Secret', { exact: true })
+      .fill('cs_' + 'b'.repeat(40))
+    await dialog
+      .getByRole('button', { name: 'Produkte importieren', exact: true })
+      .click()
+    await expect(
+      page.locator('.stats').getByRole('button', { name: /Exportbereit/ }),
+    ).toContainText('101')
+    await expect(page.locator('.shop-import-notice')).toContainText(
+      'variable (1)',
+    )
+    await expect(page.locator('.product-table tbody tr').first()).toContainText(
+      '12.50',
+    )
+    await expect(page.locator('.product-table tbody tr').first()).toContainText(
+      'SHOP-1',
+    )
+    await page.screenshot({
+      path: testInfo.outputPath('woocommerce-import.png'),
+    })
+    await page
+      .getByRole('button', { name: 'Projekt speichern', exact: true })
+      .click()
+    dialog = page.getByRole('dialog')
+    await expect(dialog.getByLabel('Projektname')).toBeEnabled()
+    await dialog.getByLabel('Projektname').fill('Shop Snapshot')
+    await dialog
+      .getByRole('button', { name: 'Projekt speichern', exact: true })
+      .click()
+    await expect(dialog.getByRole('status')).toContainText('SQLite gespeichert')
+    await page.reload()
+    await page
+      .getByRole('button', { name: 'Importprojekte', exact: true })
+      .click()
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Projekt Shop Snapshot oeffnen' })
+      .click()
+    await expect(
+      page.locator('.stats').getByRole('button', { name: /Exportbereit/ }),
+    ).toContainText('101')
+    await page
+      .getByRole('button', { name: 'Spaltenzuordnung', exact: true })
+      .click()
+    await expect(page.getByLabel('Zahlenformat der Quelle')).toHaveValue('en')
+    expect(
+      await page.evaluate(() => JSON.stringify({ ...localStorage })),
+    ).not.toContain('cs_' + 'b'.repeat(40))
+  } finally {
+    await application.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('keeps the old catalog on failed, cancelled and declined shop imports', async ({
+  playwright,
+}) => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), 'catalogdesk-shop-errors-'),
+  )
+  const application = await playwright._electron.launch({
+    args: ['.'],
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '',
+      CATALOGDESK_TEST_USER_DATA: directory,
+    },
+  })
+  try {
+    const page = await application.firstWindow()
+    await page.getByRole('button', { name: 'Beispieldaten laden' }).click()
+    await expect(page.locator('.product-table tbody tr')).toHaveCount(12)
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    const dialog = page.getByRole('dialog')
+    await dialog
+      .getByLabel('Consumer Key', { exact: true })
+      .fill('ck_' + 'a'.repeat(40))
+    await dialog
+      .getByLabel('Consumer Secret', { exact: true })
+      .fill('cs_' + 'b'.repeat(40))
+    await application.evaluate(({ net }) => {
+      net.fetch = async () =>
+        new Response('private server error', { status: 401 })
+    })
+    await dialog
+      .getByRole('button', { name: 'Produkte importieren', exact: true })
+      .click()
+    await expect(dialog.getByRole('alert')).toContainText('Zugriff verweigert')
+    await expect(page.locator('.product-table tbody tr')).toHaveCount(12)
+    await application.evaluate(({ net }) => {
+      net.fetch = (_url, options) =>
+        new Promise((_resolve, reject) =>
+          options?.signal?.addEventListener('abort', () =>
+            reject(new Error('aborted')),
+          ),
+        )
+    })
+    await dialog
+      .getByRole('button', { name: 'Produkte importieren', exact: true })
+      .click()
+    await dialog.getByRole('button', { name: 'Import abbrechen' }).click()
+    await expect(dialog.getByRole('alert')).toContainText('Import abgebrochen')
+    await application.evaluate(({ net }) => {
+      net.fetch = async () =>
+        new Response(
+          JSON.stringify([
+            {
+              id: 1,
+              type: 'simple',
+              sku: 'SHOP-1',
+              name: 'Shop Product',
+              regular_price: '12.50',
+              description: '',
+              manage_stock: false,
+              stock_quantity: null,
+              categories: [],
+            },
+          ]),
+          {
+            headers: {
+              'content-type': 'application/json',
+              'x-wp-total': '1',
+              'x-wp-totalpages': '1',
+            },
+          },
+        )
+    })
+    await dialog
+      .getByRole('button', { name: 'Produkte importieren', exact: true })
+      .click()
+    await expect(
+      dialog.getByRole('heading', { name: 'Import ersetzen?' }),
+    ).toBeVisible()
+    await dialog.getByRole('button', { name: 'Abbrechen', exact: true }).click()
+    await expect(page.locator('.product-table tbody tr')).toHaveCount(12)
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    await expect(
+      dialog.getByLabel('Consumer Secret', { exact: true }),
+    ).toHaveValue('')
+    await dialog
+      .getByLabel('Consumer Key', { exact: true })
+      .fill('ck_' + 'a'.repeat(40))
+    await dialog
+      .getByLabel('Consumer Secret', { exact: true })
+      .fill('cs_' + 'b'.repeat(40))
+    await dialog
+      .getByRole('button', { name: 'Produkte importieren', exact: true })
+      .click()
+    await dialog
+      .getByRole('button', { name: 'Shopimport uebernehmen', exact: true })
+      .click()
+    await expect(page.locator('.product-table tbody tr')).toHaveCount(1)
+    await expect(page.locator('.product-table tbody tr').first()).toContainText(
+      'SHOP-1',
+    )
+  } finally {
+    await application.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test('persists corrected import projects across a full Electron restart', async ({
   playwright,
 }, testInfo) => {

@@ -7,13 +7,16 @@ const {
   net,
   protocol,
   session,
+  safeStorage,
 } = require('electron')
 const { readFile, writeFile, stat } = require('node:fs/promises')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { assetPath, saveSchema, trustedSender } = require('./security.cjs')
 const { testConnection } = require('./shop.cjs')
+const { importShopProducts } = require('./shop-import.cjs')
 const { createDatabaseClient } = require('./database-client.cjs')
+const { createShopStore } = require('./shop-store.cjs')
 
 const development = !app.isPackaged && process.argv.includes('--dev')
 const entryUrl = development
@@ -75,6 +78,29 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  const shopStore = createShopStore(
+    path.join(app.getPath('userData'), 'credentials'),
+    safeStorage,
+  )
+  for (const operation of ['summary', 'save', 'delete']) {
+    ipcMain.handle(
+      `catalog:shop-store-${operation}`,
+      async (event, payload) => {
+        validateSender(event)
+        try {
+          return { ok: true, value: await shopStore[operation](payload) }
+        } catch (error) {
+          return { ok: false, error: error.message }
+        }
+      },
+    )
+  }
+  async function shopCredentials(payload) {
+    if (payload !== null) return payload
+    const saved = await shopStore.load()
+    if (!saved) throw new Error('Keine gespeicherte Shopverbindung vorhanden.')
+    return saved
+  }
   projectDatabase = createDatabaseClient(
     path.join(app.getPath('userData'), 'data', 'catalogdesk.sqlite'),
   )
@@ -139,19 +165,55 @@ app.whenReady().then(() => {
     return true
   })
   let connectionTestRunning = false
+  let shopImportController = null
   ipcMain.handle('catalog:test-shop', async (event, payload) => {
     validateSender(event)
-    if (connectionTestRunning)
+    if (connectionTestRunning || shopImportController)
       return { ok: false, error: 'Ein Verbindungstest laeuft bereits.' }
     connectionTestRunning = true
     try {
-      return await testConnection(payload, (url, options) =>
-        net.fetch(url, options),
+      return await testConnection(
+        await shopCredentials(payload),
+        (url, options) => net.fetch(url, options),
       )
+    } catch (error) {
+      return { ok: false, error: error.message }
     } finally {
       connectionTestRunning = false
     }
   })
+  ipcMain.handle('catalog:import-shop', async (event, payload) => {
+    validateSender(event)
+    if (connectionTestRunning || shopImportController)
+      return { ok: false, error: 'Eine Shopanfrage laeuft bereits.' }
+    const controller = new AbortController()
+    shopImportController = controller
+    try {
+      return await importShopProducts(
+        await shopCredentials(payload),
+        (url, options) => net.fetch(url, options),
+        {
+          signal: controller.signal,
+          onProgress: (progress) => {
+            if (event.sender.isDestroyed()) {
+              controller.abort()
+              return
+            }
+            event.sender.send('catalog:import-shop-progress', progress)
+          },
+        },
+      )
+    } catch (error) {
+      return { ok: false, error: error.message }
+    } finally {
+      shopImportController = null
+    }
+  })
+  ipcMain.handle('catalog:cancel-shop-import', (event) => {
+    validateSender(event)
+    shopImportController?.abort()
+  })
+  app.on('before-quit', () => shopImportController?.abort())
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),

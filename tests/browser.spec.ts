@@ -45,6 +45,9 @@ test('keeps WooCommerce credentials out of the browser preview', async ({
   await expect(
     dialog.getByRole('button', { name: 'Verbindung pruefen', exact: true }),
   ).toBeDisabled()
+  await expect(
+    dialog.getByRole('button', { name: 'Produkte importieren', exact: true }),
+  ).toBeDisabled()
   await expect(dialog.getByRole('status')).toContainText(
     'nur in der Electron-App',
   )

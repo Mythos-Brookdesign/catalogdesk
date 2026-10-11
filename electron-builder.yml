@@ -9,6 +9,8 @@ files:
   - electron/preload.cjs
   - electron/security.cjs
   - electron/shop.cjs
+  - electron/shop-store.cjs
+  - electron/shop-import.cjs
   - electron/database.cjs
   - electron/database-worker.cjs
   - electron/database-client.cjs

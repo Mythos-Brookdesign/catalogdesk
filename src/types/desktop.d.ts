@@ -7,6 +7,23 @@ export type ShopConnectionResult =
   | { ok: true; url: string; productCount: number; checkedAt: string }
   | { ok: false; error: string }
 
+export type ShopImportProgress = {
+  loaded: number
+  total: number
+  page: number
+  pages: number
+}
+export type ImportedShop = {
+  ok: true
+  url: string
+  dataset: import('../domain/catalog').Dataset
+  imported: number
+  total: number
+  skipped: { type: string; count: number }[]
+  importedAt: string
+}
+export type ShopImportResult = ImportedShop | { ok: false; error: string }
+
 export type ProjectSnapshot = {
   filename: string
   demo: boolean
@@ -38,6 +55,18 @@ export type DatabaseResult<Value> =
 declare global {
   interface Window {
     catalogDesktop?: {
+      savedShopConnection: () => Promise<DatabaseResult<{ url: string } | null>>
+      saveShopConnection: (
+        payload: ShopConnection,
+      ) => Promise<DatabaseResult<{ url: string }>>
+      deleteShopConnection: () => Promise<DatabaseResult<boolean>>
+      importShopProducts: (
+        payload: ShopConnection | null,
+      ) => Promise<ShopImportResult>
+      cancelShopImport: () => Promise<void>
+      onShopImportProgress: (
+        callback: (progress: ShopImportProgress) => void,
+      ) => () => void
       listProjects: () => Promise<DatabaseResult<ProjectSummary[]>>
       loadProject: (id: string) => Promise<DatabaseResult<SavedProject>>
       saveProject: (
@@ -51,7 +80,7 @@ declare global {
         DatabaseResult<{ path: string; schemaVersion: number }>
       >
       testShopConnection: (
-        payload: ShopConnection,
+        payload: ShopConnection | null,
       ) => Promise<ShopConnectionResult>
       openCsv: () => Promise<{ name: string; content: string } | null>
       saveCsv: (payload: {

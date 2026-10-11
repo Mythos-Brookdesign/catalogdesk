@@ -1,25 +1,34 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   CheckCircle2,
   CircleAlert,
   Eye,
   EyeOff,
+  Download,
   LoaderCircle,
   PlugZap,
   ShieldCheck,
+  Save,
+  Trash2,
 } from 'lucide-react'
 import { Dialog } from './Dialog'
-import type { ShopConnectionResult } from '../types/desktop'
+import type {
+  ImportedShop,
+  ShopConnectionResult,
+  ShopImportProgress,
+} from '../types/desktop'
 
 export type CheckedShop = Extract<ShopConnectionResult, { ok: true }>
 
 export function ShopConnectionDialog({
   checked,
   onChecked,
+  onImported,
   onClose,
 }: {
   checked: CheckedShop | null
   onChecked: (result: CheckedShop | null) => void
+  onImported: (result: ImportedShop) => void
   onClose: () => void
 }) {
   const desktop = window.catalogDesktop
@@ -28,7 +37,140 @@ export function ShopConnectionDialog({
   const [consumerSecret, setConsumerSecret] = useState('')
   const [visible, setVisible] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [action, setAction] = useState<'test' | 'import'>('import')
+  const [progress, setProgress] = useState<ShopImportProgress | null>(null)
+  const [storedUrl, setStoredUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(Boolean(desktop))
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const reuseStored = Boolean(
+    storedUrl && url === storedUrl && !consumerKey && !consumerSecret,
+  )
+  const busy = testing || importing || loading || saving
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!desktop) return
+    return desktop.onShopImportProgress(setProgress)
+  }, [desktop])
+
+  useEffect(() => {
+    if (!desktop) return
+    let canceled = false
+    desktop
+      .savedShopConnection()
+      .then((result) => {
+        if (canceled) return
+        if (result.ok) {
+          setStoredUrl(result.value?.url ?? null)
+          if (result.value) setUrl(result.value.url)
+        } else setError(result.error)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (!canceled) {
+          setError('Gespeicherte Verbindung konnte nicht geladen werden.')
+          setLoading(false)
+        }
+      })
+    return () => {
+      canceled = true
+    }
+  }, [desktop])
+
+  async function saveConnection() {
+    if (!desktop || busy) return
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await desktop.saveShopConnection({
+        url: url.trim(),
+        consumerKey: consumerKey.trim(),
+        consumerSecret: consumerSecret.trim(),
+      })
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setStoredUrl(result.value.url)
+      setUrl(result.value.url)
+      setConsumerKey('')
+      setConsumerSecret('')
+      setVisible(false)
+      setNotice('Shopverbindung sicher gespeichert.')
+    } catch {
+      setError('Shopverbindung konnte nicht gespeichert werden.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function deleteConnection() {
+    if (!desktop || busy) return
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await desktop.deleteShopConnection()
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setStoredUrl(null)
+      setConsumerKey('')
+      setConsumerSecret('')
+      setConfirmDelete(false)
+      onChecked(null)
+      setNotice('Gespeicherte Shopverbindung geloescht.')
+    } catch {
+      setError('Verbindung konnte nicht geloescht werden.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function importProducts() {
+    if (!desktop || busy) return
+    setImporting(true)
+    setError('')
+    setProgress(null)
+    onChecked(null)
+    try {
+      const result = await desktop.importShopProducts(
+        reuseStored
+          ? null
+          : {
+              url: url.trim(),
+              consumerKey: consumerKey.trim(),
+              consumerSecret: consumerSecret.trim(),
+            },
+      )
+      if (result.ok) {
+        setConsumerKey('')
+        setConsumerSecret('')
+        setVisible(false)
+        onChecked({
+          ok: true,
+          url: result.url,
+          productCount: result.total,
+          checkedAt: result.importedAt,
+        })
+        onImported(result)
+      } else {
+        setError(result.error)
+      }
+    } catch {
+      setError(
+        'Shopimport konnte nicht ausgefuehrt werden. Bitte Electron neu starten.',
+      )
+    } finally {
+      setImporting(false)
+      setProgress(null)
+    }
+  }
 
   function resetResult() {
     setError('')
@@ -36,16 +178,20 @@ export function ShopConnectionDialog({
   }
 
   async function test() {
-    if (!desktop || testing) return
+    if (!desktop || busy) return
     setTesting(true)
     setError('')
     onChecked(null)
     try {
-      const result = await desktop.testShopConnection({
-        url: url.trim(),
-        consumerKey: consumerKey.trim(),
-        consumerSecret: consumerSecret.trim(),
-      })
+      const result = await desktop.testShopConnection(
+        reuseStored
+          ? null
+          : {
+              url: url.trim(),
+              consumerKey: consumerKey.trim(),
+              consumerSecret: consumerSecret.trim(),
+            },
+      )
       if (result.ok) {
         onChecked(result)
         setUrl(result.url)
@@ -68,7 +214,7 @@ export function ShopConnectionDialog({
     <Dialog
       title="Shopverbindung"
       onClose={() => {
-        if (!testing) onClose()
+        if (!busy) onClose()
       }}
     >
       <div className="shop-mode">
@@ -88,10 +234,11 @@ export function ShopConnectionDialog({
         className="shop-form"
         onSubmit={(event) => {
           event.preventDefault()
-          void test()
+          if (action === 'import') void importProducts()
+          else void test()
         }}
       >
-        <fieldset disabled={!desktop || testing}>
+        <fieldset disabled={!desktop || busy}>
           <label className="field">
             <span>Shopadresse (HTTPS)</span>
             <input
@@ -103,6 +250,8 @@ export function ShopConnectionDialog({
               value={url}
               onChange={(event) => {
                 setUrl(event.target.value)
+                setConsumerKey('')
+                setConsumerSecret('')
                 resetResult()
               }}
             />
@@ -111,13 +260,13 @@ export function ShopConnectionDialog({
             <span>Consumer Key</span>
             <input
               type={visible ? 'text' : 'password'}
-              required
+              required={!reuseStored}
               autoComplete="off"
               spellCheck={false}
               autoCapitalize="none"
               pattern="ck_[a-f0-9]{40}"
               maxLength={43}
-              placeholder="ck_..."
+              placeholder={reuseStored ? 'Sicher gespeichert' : 'ck_...'}
               value={consumerKey}
               onChange={(event) => {
                 setConsumerKey(event.target.value)
@@ -129,13 +278,13 @@ export function ShopConnectionDialog({
             <span>Consumer Secret</span>
             <input
               type={visible ? 'text' : 'password'}
-              required
+              required={!reuseStored}
               autoComplete="off"
               spellCheck={false}
               autoCapitalize="none"
               pattern="cs_[a-f0-9]{40}"
               maxLength={43}
-              placeholder="cs_..."
+              placeholder={reuseStored ? 'Sicher gespeichert' : 'cs_...'}
               value={consumerSecret}
               onChange={(event) => {
                 setConsumerSecret(event.target.value)
@@ -156,21 +305,125 @@ export function ShopConnectionDialog({
             >
               {visible ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
+            <div className="shop-command-actions">
+              <button
+                className="button"
+                type="submit"
+                onClick={() => setAction('test')}
+                disabled={
+                  (!reuseStored && (!consumerKey || !consumerSecret)) ||
+                  !url ||
+                  busy
+                }
+              >
+                {testing ? (
+                  <LoaderCircle className="spin" size={17} />
+                ) : (
+                  <PlugZap size={17} />
+                )}
+                {testing
+                  ? 'Verbindung wird geprueft ...'
+                  : 'Verbindung pruefen'}
+              </button>
+              <button
+                className="button primary"
+                type="submit"
+                onClick={() => setAction('import')}
+                disabled={
+                  (!reuseStored && (!consumerKey || !consumerSecret)) ||
+                  !url ||
+                  busy
+                }
+              >
+                <Download size={17} />
+                Produkte importieren
+              </button>
+            </div>
+          </div>
+          <div className="dialog-actions">
             <button
-              className="button primary"
-              type="submit"
-              disabled={!consumerKey || !consumerSecret || !url || testing}
+              className="button"
+              type="button"
+              disabled={!consumerKey || !consumerSecret || !url || busy}
+              onClick={() => void saveConnection()}
             >
-              {testing ? (
-                <LoaderCircle className="spin" size={17} />
-              ) : (
-                <PlugZap size={17} />
-              )}
-              {testing ? 'Verbindung wird geprueft ...' : 'Verbindung pruefen'}
+              <Save size={16} />
+              Verbindung speichern
             </button>
           </div>
         </fieldset>
       </form>
+      {notice && (
+        <p className="project-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {storedUrl && (
+        <div className="shop-footer">
+          <span className="shop-url">Gespeichert: {storedUrl}</span>
+          <button
+            className="icon-button"
+            type="button"
+            title="Gespeicherte Verbindung loeschen"
+            aria-label="Gespeicherte Verbindung loeschen"
+            disabled={busy}
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 size={17} />
+          </button>
+        </div>
+      )}
+      {confirmDelete && (
+        <div className="project-delete">
+          <p>Gespeicherte Shopverbindung dauerhaft loeschen?</p>
+          <div className="dialog-actions">
+            <button
+              className="button"
+              disabled={busy}
+              onClick={() => setConfirmDelete(false)}
+            >
+              Abbrechen
+            </button>
+            <button
+              className="button"
+              disabled={busy}
+              onClick={() => void deleteConnection()}
+            >
+              Verbindung endgueltig loeschen
+            </button>
+          </div>
+        </div>
+      )}
+      {importing && (
+        <div className="shop-import-progress" role="status">
+          <div>
+            <LoaderCircle className="spin" size={17} />
+            <span>
+              {progress
+                ? `${progress.loaded.toLocaleString('de-DE')} / ${progress.total.toLocaleString('de-DE')} Produkte geladen`
+                : 'Shopprodukte werden geladen ...'}
+            </span>
+          </div>
+          <progress
+            aria-label="Shopimport-Fortschritt"
+            value={progress?.loaded ?? 0}
+            max={Math.max(1, progress?.total ?? 1)}
+          />
+          <button
+            className="button"
+            type="button"
+            onClick={() => {
+              void desktop
+                ?.cancelShopImport()
+                .catch(() =>
+                  setError('Abbruch fehlgeschlagen. Bitte erneut versuchen.'),
+                )
+            }}
+          >
+            Import abbrechen
+          </button>
+        </div>
+      )}
       {error && (
         <div className="banner danger" role="alert">
           <CircleAlert size={17} />
@@ -194,12 +447,14 @@ export function ShopConnectionDialog({
       )}
       <div className="shop-footer">
         <span className="muted-text">Schl&uuml;sselspeicherung</span>
-        <strong>Nur f&uuml;r diesen Test</strong>
+        <strong>
+          {storedUrl ? 'Systemsicher verschluesselt' : 'Noch nicht gespeichert'}
+        </strong>
       </div>
       <div className="dialog-actions">
         <button
           className="button"
-          disabled={testing}
+          disabled={busy}
           onClick={() => {
             setConsumerKey('')
             setConsumerSecret('')
