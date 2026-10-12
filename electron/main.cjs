@@ -109,6 +109,16 @@ app.whenReady().then(async () => {
     if (!saved) throw new Error('Keine gespeicherte Shopverbindung vorhanden.')
     return saved
   }
+  async function rememberExplicitShopCredentials(payload, connection, result) {
+    if (!result.ok || payload === null)
+      return { ...result, credentialsSaved: true }
+    try {
+      await shopStore.save(connection)
+      return { ...result, credentialsSaved: true }
+    } catch (error) {
+      return { ...result, credentialsSaved: false, storageError: error.message }
+    }
+  }
   projectDatabase = createDatabaseClient(
     path.join(app.getPath('userData'), 'data', 'catalogdesk.sqlite'),
   )
@@ -321,10 +331,11 @@ app.whenReady().then(async () => {
       return { ok: false, error: 'Ein Verbindungstest laeuft bereits.' }
     connectionTestRunning = true
     try {
-      return await testConnection(
-        await shopCredentials(payload),
-        (url, options) => net.fetch(url, options),
+      const connection = await shopCredentials(payload)
+      const result = await testConnection(connection, (url, options) =>
+        net.fetch(url, options),
       )
+      return await rememberExplicitShopCredentials(payload, connection, result)
     } catch (error) {
       return { ok: false, error: error.message }
     } finally {
@@ -338,8 +349,9 @@ app.whenReady().then(async () => {
     const controller = new AbortController()
     shopImportController = controller
     try {
-      return await importShopProducts(
-        await shopCredentials(payload),
+      const connection = await shopCredentials(payload)
+      const result = await importShopProducts(
+        connection,
         (url, options) => net.fetch(url, options),
         {
           signal: controller.signal,
@@ -352,6 +364,7 @@ app.whenReady().then(async () => {
           },
         },
       )
+      return await rememberExplicitShopCredentials(payload, connection, result)
     } catch (error) {
       return { ok: false, error: error.message }
     } finally {

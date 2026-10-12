@@ -65,7 +65,14 @@ export type HistorySummary = Omit<TransferRun, 'items' | 'events'> & {
 }
 export type Theme = 'light' | 'dark'
 export type ShopConnectionResult =
-  | { ok: true; url: string; productCount: number; checkedAt: string }
+  | {
+      ok: true
+      url: string
+      productCount: number
+      checkedAt: string
+      credentialsSaved: boolean
+      storageError?: string
+    }
   | { ok: false; error: string }
 
 export type ShopImportProgress = {
@@ -82,6 +89,8 @@ export type ImportedShop = {
   total: number
   skipped: { type: string; count: number }[]
   importedAt: string
+  credentialsSaved: boolean
+  storageError?: string
 }
 export type ShopImportResult = ImportedShop | { ok: false; error: string }
 

@@ -149,14 +149,20 @@ export function ShopConnectionDialog({
             },
       )
       if (result.ok) {
-        setConsumerKey('')
-        setConsumerSecret('')
-        setVisible(false)
+        if (result.credentialsSaved) {
+          setConsumerKey('')
+          setConsumerSecret('')
+          setVisible(false)
+          setStoredUrl(result.url)
+          setNotice('Shopverbindung verwendet und sicher gespeichert.')
+        }
         onChecked({
           ok: true,
           url: result.url,
           productCount: result.total,
           checkedAt: result.importedAt,
+          credentialsSaved: result.credentialsSaved,
+          ...(result.storageError ? { storageError: result.storageError } : {}),
         })
         onImported(result)
       } else {
@@ -174,6 +180,7 @@ export function ShopConnectionDialog({
 
   function resetResult() {
     setError('')
+    setNotice('')
     onChecked(null)
   }
 
@@ -193,11 +200,19 @@ export function ShopConnectionDialog({
             },
       )
       if (result.ok) {
+        if (result.credentialsSaved) {
+          setConsumerKey('')
+          setConsumerSecret('')
+          setVisible(false)
+          setStoredUrl(result.url)
+          setNotice('Shopverbindung geprueft und sicher gespeichert.')
+        } else {
+          setNotice(
+            `Verbindung erfolgreich, aber Zugangsdaten nicht gespeichert: ${result.storageError ?? 'Systemspeicher nicht verfuegbar.'} Bitte Zugangsdaten sicher speichern.`,
+          )
+        }
         onChecked(result)
         setUrl(result.url)
-        setConsumerKey('')
-        setConsumerSecret('')
-        setVisible(false)
       } else {
         setError(result.error)
       }
@@ -220,7 +235,7 @@ export function ShopConnectionDialog({
       <div className="shop-mode">
         <ShieldCheck size={16} />
         <span>WooCommerce REST API</span>
-        <span className="status neutral">Nur lesen</span>
+        <span className="status neutral">Lesen &amp; Schreiben</span>
       </div>
       {!desktop && (
         <div className="banner warning" role="status">
