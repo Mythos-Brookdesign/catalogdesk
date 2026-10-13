@@ -91,6 +91,12 @@ test('bootstraps an administrator, manages a reader and enforces role restrictio
         }),
       ),
     ).toMatchObject({ ok: false })
+    expect(
+      await page.evaluate(() => window.catalogDesktop!.backupDatabase()),
+    ).toMatchObject({ ok: false })
+    expect(
+      await page.evaluate(() => window.catalogDesktop!.restoreDatabase()),
+    ).toMatchObject({ ok: false })
     await page.getByRole('button', { name: 'Abmelden' }).click()
     await page.getByLabel('Benutzername').fill('SHOP-ADMIN')
     await page

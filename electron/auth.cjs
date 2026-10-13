@@ -43,6 +43,7 @@ const roles = {
     'history:read',
     'history:verify',
     'users:manage',
+    'database:manage',
     'theme:write',
     'files:read',
     'files:write',

@@ -439,6 +439,7 @@ test('persists corrected import projects across a full Electron restart', async 
   const directory = await mkdtemp(
     path.join(os.tmpdir(), 'catalogdesk-projects-'),
   )
+
   const launch = () =>
     launchAuthenticatedElectron(playwright, {
       args: ['.'],
@@ -562,6 +563,97 @@ test('persists corrected import projects across a full Electron restart', async 
         window.catalogDesktop!.loadProject("' OR 1=1 --"),
       ),
     ).toMatchObject({ ok: false })
+  } finally {
+    await application.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('creates and restores an admin database backup and expires sessions', async ({
+  playwright,
+}) => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), 'catalogdesk-backup-restore-'),
+  )
+  const backup = path.join(directory, 'catalogdesk-backup.sqlite')
+  const application = await launchAuthenticatedElectron(playwright, {
+    args: ['.'],
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '',
+      CATALOGDESK_TEST_USER_DATA: directory,
+    },
+  })
+  try {
+    const page = await application.firstWindow()
+    await page.getByRole('button', { name: 'Beispieldaten laden' }).click()
+    await page
+      .getByRole('button', { name: 'Projekt speichern', exact: true })
+      .click()
+    let dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Projektname').fill('Sicherung Basisstand')
+    await dialog
+      .getByRole('button', { name: 'Projekt speichern', exact: true })
+      .click()
+    await expect(dialog.getByRole('status')).toContainText('SQLite gespeichert')
+    await application.evaluate(({ dialog: nativeDialog }, filePath) => {
+      nativeDialog.showSaveDialog = async () => ({ canceled: false, filePath })
+    }, backup)
+    await dialog.getByRole('button', { name: 'Sicherung erstellen' }).click()
+    await expect(dialog.getByRole('status')).toContainText('Sicherung erstellt')
+    expect((await readFile(backup)).length).toBeGreaterThan(0)
+    await dialog
+      .getByRole('button', { name: 'Schliessen', exact: true })
+      .click()
+
+    await page.getByRole('button', { name: 'Benutzerkonten verwalten' }).click()
+    dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Benutzername').fill('rollback-user')
+    await dialog.getByLabel('Anzeigename').fill('Rollback User')
+    await dialog
+      .locator('input[type="password"]')
+      .fill('Rollback-Long-Password-2026!')
+    await dialog.getByLabel('Rolle').selectOption('reader')
+    await dialog.getByRole('button', { name: 'Benutzer anlegen' }).click()
+    await expect(dialog.locator('.user-list')).toContainText('rollback-user')
+    await dialog
+      .getByRole('button', { name: 'Dialog schliessen', exact: true })
+      .click()
+
+    await application.evaluate(({ dialog: nativeDialog }, filePath) => {
+      nativeDialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filePath],
+      })
+    }, backup)
+    await page
+      .getByRole('button', { name: 'Importprojekte', exact: true })
+      .click()
+    dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: 'Wiederherstellen' }).click()
+    await dialog
+      .getByRole('button', { name: 'Sicherung jetzt wiederherstellen' })
+      .click()
+    await expect(
+      page.getByRole('heading', { name: 'Anmelden', exact: true }),
+    ).toBeVisible()
+    await initializeTestAdmin(page)
+
+    await page.getByRole('button', { name: 'Benutzerkonten verwalten' }).click()
+    dialog = page.getByRole('dialog')
+    await expect(dialog.locator('.user-list')).not.toContainText(
+      'rollback-user',
+    )
+    await dialog
+      .getByRole('button', { name: 'Dialog schliessen', exact: true })
+      .click()
+    await page
+      .getByRole('button', { name: 'Importprojekte', exact: true })
+      .click()
+    dialog = page.getByRole('dialog')
+    await expect(dialog.locator('.project-list')).toContainText(
+      'Sicherung Basisstand',
+    )
   } finally {
     await application.close()
     await rm(directory, { recursive: true, force: true })

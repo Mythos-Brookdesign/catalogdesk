@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('catalogDesktop', {
   saveProject: (payload) => authorized('catalog:projects-save', payload),
   deleteProject: (payload) => authorized('catalog:projects-delete', payload),
   databaseInfo: () => authorized('catalog:projects-info'),
+  backupDatabase: () => authorized('catalog:database-backup'),
+  restoreDatabase: () => authorized('catalog:database-restore'),
   openCsv: () => authorized('catalog:open-csv'),
   saveCsv: (payload) => authorized('catalog:save-csv', payload),
   testShopConnection: (payload) => authorized('catalog:test-shop', payload),

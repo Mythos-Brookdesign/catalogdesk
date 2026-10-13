@@ -202,6 +202,10 @@ declare global {
       databaseInfo: () => Promise<
         DatabaseResult<{ path: string; schemaVersion: number }>
       >
+      backupDatabase: () => Promise<DatabaseResult<{ bytes: number } | null>>
+      restoreDatabase: () => Promise<
+        DatabaseResult<{ setupRequired: boolean } | null>
+      >
       testShopConnection: (
         payload: ShopConnection | null,
       ) => Promise<ShopConnectionResult>

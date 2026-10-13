@@ -7,6 +7,8 @@ import {
   RefreshCw,
   Save,
   Trash2,
+  Download,
+  Upload,
 } from 'lucide-react'
 import { Dialog } from './Dialog'
 import type {
@@ -25,6 +27,7 @@ export function ProjectsDialog({
   snapshot,
   active,
   canWrite,
+  canManageDatabase,
   onSaved,
   onOpen,
   onDeleted,
@@ -33,6 +36,7 @@ export function ProjectsDialog({
   snapshot: ProjectSnapshot | null
   active: ProjectSummary | null
   canWrite: boolean
+  canManageDatabase: boolean
   onSaved: (summary: ProjectSummary, snapshot: ProjectSnapshot) => void
   onOpen: (project: SavedProject) => void
   onDeleted: (id: string) => void
@@ -49,6 +53,7 @@ export function ProjectsDialog({
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [deleting, setDeleting] = useState<ProjectSummary | null>(null)
+  const [confirmRestore, setConfirmRestore] = useState(false)
 
   useEffect(() => {
     if (!desktop) return
@@ -112,6 +117,27 @@ export function ProjectsDialog({
         ...current.filter((item) => item.id !== saved.id),
       ])
       setNotice('Projekt in SQLite gespeichert.')
+    })
+  }
+
+  async function createBackup() {
+    if (!desktop || !canManageDatabase) return
+    await execute(async () => {
+      const result = unwrap(await desktop.backupDatabase())
+      if (result)
+        setNotice(
+          `Sicherung erstellt (${new Intl.NumberFormat('de-DE').format(result.bytes)} Bytes).`,
+        )
+    })
+  }
+
+  async function restoreBackup() {
+    if (!desktop || !canManageDatabase) return
+    setConfirmRestore(false)
+    await execute(async () => {
+      const result = unwrap(await desktop.restoreDatabase())
+      if (result)
+        setNotice('Sicherung wiederhergestellt. Bitte erneut anmelden.')
     })
   }
 
@@ -296,6 +322,63 @@ export function ProjectsDialog({
         <div className="database-location">
           <span>Datenbankdatei</span>
           <code>{databasePath}</code>
+        </div>
+      )}
+      {desktop && canManageDatabase && (
+        <section className="database-backup" aria-label="Datenbanksicherung">
+          <h3>Datenbanksicherung</h3>
+          <p>
+            Sicherungen enthalten Projekte, Einstellungen, Konten und Verlauf.
+            Shop-Schluessel bleiben getrennt gespeichert.
+          </p>
+          <div className="project-save-actions">
+            <button
+              className="button"
+              disabled={working || loading}
+              onClick={() => void createBackup()}
+            >
+              <Download size={16} />
+              Sicherung erstellen
+            </button>
+            <button
+              className="button"
+              disabled={working || loading}
+              onClick={() => setConfirmRestore(true)}
+            >
+              <Upload size={16} />
+              Wiederherstellen
+            </button>
+          </div>
+        </section>
+      )}
+      {confirmRestore && (
+        <div
+          className="project-delete"
+          role="alertdialog"
+          aria-labelledby="restore-title"
+        >
+          <h3 id="restore-title">Lokale Datenbank ersetzen?</h3>
+          <p>
+            Projekte, Einstellungen, Benutzerkonten und Verlauf werden durch den
+            Sicherungsstand ersetzt. Danach muessen sich alle Nutzer erneut
+            anmelden.
+          </p>
+          <div className="dialog-actions">
+            <button
+              className="button"
+              disabled={working}
+              onClick={() => setConfirmRestore(false)}
+            >
+              Abbrechen
+            </button>
+            <button
+              className="button primary"
+              disabled={working}
+              onClick={() => void restoreBackup()}
+            >
+              Sicherung jetzt wiederherstellen
+            </button>
+          </div>
         </div>
       )}
       <div className="dialog-actions">

@@ -1,5 +1,13 @@
 const { DatabaseSync } = require('node:sqlite')
-const { mkdirSync } = require('node:fs')
+const {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+} = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const { z } = require('zod')
@@ -79,6 +87,11 @@ const saveProjectSchema = z
     'Revision required for updates',
   )
 const idSchema = z.string().uuid()
+const databasePathSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .refine((value) => !value.includes('\0'))
 const shopProductSchema = z
   .object({
     id: z.number().int().positive(),
@@ -141,6 +154,66 @@ const bootstrapAccountSchema = z
 const createAccountSchema = z.object(accountFields).strict()
 const userIdSchema = z.string().uuid()
 const transferActorSchema = z.object({ actorId: userIdSchema })
+
+function removeSqliteSidecars(filename) {
+  rmSync(`${filename}-wal`, { force: true })
+  rmSync(`${filename}-shm`, { force: true })
+}
+
+function restoreDatabase(filename, backupFilename) {
+  const activePath = path.resolve(databasePathSchema.parse(filename))
+  const sourcePath = path.resolve(databasePathSchema.parse(backupFilename))
+  if (activePath === sourcePath)
+    throw new Error('Sicherungsdatei muss von der aktiven Datenbank abweichen.')
+
+  const stagingPath = `${activePath}.restore-${randomUUID()}`
+  const previousPath = `${activePath}.previous-${randomUUID()}`
+  let candidate
+  let previousMoved = false
+  let replacementInstalled = false
+  try {
+    copyFileSync(sourcePath, stagingPath)
+    chmodSync(stagingPath, 0o600)
+    candidate = openDatabase(stagingPath)
+    if (!candidate.isHealthy())
+      throw new Error('Sicherungsdatei ist beschaedigt.')
+    candidate.authState()
+    candidate.getTheme()
+    candidate.list()
+    candidate.listTransfers()
+    candidate.close()
+    candidate = null
+    removeSqliteSidecars(stagingPath)
+
+    renameSync(activePath, previousPath)
+    previousMoved = true
+    renameSync(stagingPath, activePath)
+    replacementInstalled = true
+
+    candidate = openDatabase(activePath)
+    if (!candidate.isHealthy())
+      throw new Error('Wiederhergestellte Datenbank ist beschaedigt.')
+    const state = candidate.authState()
+    candidate.close()
+    candidate = null
+    removeSqliteSidecars(activePath)
+    rmSync(previousPath, { force: true })
+    previousMoved = false
+    return state
+  } catch (error) {
+    candidate?.close()
+    if (replacementInstalled) {
+      rmSync(activePath, { force: true })
+      removeSqliteSidecars(activePath)
+    }
+    if (previousMoved && existsSync(previousPath))
+      renameSync(previousPath, activePath)
+    throw error
+  } finally {
+    rmSync(stagingPath, { force: true })
+    removeSqliteSidecars(stagingPath)
+  }
+}
 
 function openDatabase(filename) {
   mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 })
@@ -391,6 +464,40 @@ function openDatabase(filename) {
         .run(parsed.data)
       return parsed.data
     },
+    backupInto(targetFilename) {
+      const targetPath = path.resolve(databasePathSchema.parse(targetFilename))
+      if (targetPath === path.resolve(filename))
+        throw new Error(
+          'Sicherungsdatei muss von der aktiven Datenbank abweichen.',
+        )
+      const stagingPath = `${targetPath}.pending-${randomUUID()}`
+      const previousPath = `${targetPath}.previous-${randomUUID()}`
+      let previousMoved = false
+      try {
+        const escapedPath = stagingPath.replaceAll("'", "''")
+        database.exec(`VACUUM INTO '${escapedPath}'`)
+        chmodSync(stagingPath, 0o600)
+        if (existsSync(targetPath)) {
+          renameSync(targetPath, previousPath)
+          previousMoved = true
+        }
+        renameSync(stagingPath, targetPath)
+        const bytes = statSync(targetPath).size
+        if (previousMoved) rmSync(previousPath, { force: true })
+        previousMoved = false
+        return { bytes }
+      } catch (error) {
+        if (previousMoved && existsSync(previousPath))
+          renameSync(previousPath, targetPath)
+        throw error
+      } finally {
+        rmSync(stagingPath, { force: true })
+        removeSqliteSidecars(stagingPath)
+      }
+    },
+    isHealthy: () =>
+      database.prepare('PRAGMA integrity_check').get().integrity_check ===
+        'ok' && database.prepare('PRAGMA foreign_key_check').all().length === 0,
     authState: () => ({
       setupRequired:
         database.prepare('SELECT COUNT(*) AS count FROM app_users').get()
@@ -587,4 +694,4 @@ function openDatabase(filename) {
   }
 }
 
-module.exports = { openDatabase, saveProjectSchema }
+module.exports = { openDatabase, restoreDatabase, saveProjectSchema }

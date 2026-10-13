@@ -1,5 +1,5 @@
 const { parentPort, workerData } = require('node:worker_threads')
-const { openDatabase } = require('./database.cjs')
+const { openDatabase, restoreDatabase } = require('./database.cjs')
 
 let database
 let startupError
@@ -31,6 +31,8 @@ const operations = new Set([
   'listUsers',
   'setUserActive',
   'recordLogin',
+  'backupInto',
+  'restoreDatabase',
 ])
 parentPort.on('message', ({ id, operation, payload }) => {
   try {
@@ -42,6 +44,19 @@ parentPort.on('message', ({ id, operation, payload }) => {
     if (startupError) throw new Error(startupError)
     if (!operations.has(operation))
       throw new Error('Unbekannte Datenbankoperation.')
+    if (operation === 'restoreDatabase') {
+      database.close()
+      database = null
+      try {
+        const state = restoreDatabase(workerData.filename, payload)
+        database = openDatabase(workerData.filename)
+        parentPort.postMessage({ id, result: state })
+      } catch (error) {
+        database = openDatabase(workerData.filename)
+        throw error
+      }
+      return
+    }
     const result = database[operation](payload)
     parentPort.postMessage({ id, result })
     if (operation === 'close') parentPort.close()

@@ -1744,6 +1744,7 @@ export default function App({
           snapshot={snapshot}
           active={activeProject}
           canWrite={canWriteCatalog}
+          canManageDatabase={canManageUsers}
           onSaved={(summary, saved) => {
             setActiveProject(summary)
             setSavedSnapshot(saved)

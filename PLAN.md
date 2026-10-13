@@ -61,6 +61,8 @@ Eine eigenstaendige Netzwerk-/Team-Edition kann spaeter einen zentralen Synchron
 - Audit-Ereignisse erhalten die angemeldete Actor-ID.
 - Shopverbindung und vorhandene Shop-Schluessel bleiben an ein Betriebssystemkonto gebunden. Rechte geteilter App-Konten fuer die Shopverbindung bewusst definieren.
 - Mehrbenutzerzugriff auf SQLite, Datenbanktransaktionen, Backup-/Restore und Migrationen testen.
+- Administratoren koennen konsistente SQLite-Sicherungen erstellen und wiederherstellen. Restore prueft Integritaet und Schema, stellt den alten Datenbankstand bei Fehlern wieder her und meldet alle Nutzer ab.
+- Sicherungen enthalten lokale Konten samt Passwort-Hashes, Projekte und Verlauf; Shop-Schluessel liegen weiterhin getrennt. Sicherungsdateien sind nicht verschluesselt und muessen entsprechend geschuetzt aufbewahrt werden.
 
 **Abnahmekriterien:** Nutzer koennen sich getrennt anmelden; Leser koennen nichts aendern; Bearbeiter koennen Entwuerfe vorbereiten; nur berechtigte Rollen koennen Uebertragungen freigeben; jede relevante Aktion hat einen Actor.
 

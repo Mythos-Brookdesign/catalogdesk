@@ -15,6 +15,13 @@ it('opens SQLite in a background thread and safely reports startup failures', as
     expect(await database.request('info')).toMatchObject({ schemaVersion: 5 })
     expect(await database.request('getTheme')).toBe('light')
     expect(await database.request('setTheme', 'dark')).toBe('dark')
+    const backupFilename = path.join(directory, 'backup.sqlite')
+    expect(await database.request('backupInto', backupFilename)).toMatchObject({
+      bytes: expect.any(Number),
+    })
+    await database.request('setTheme', 'light')
+    await database.request('restoreDatabase', backupFilename)
+    expect(await database.request('getTheme')).toBe('dark')
     await expect(
       database.request('exec', 'DROP TABLE projects'),
     ).rejects.toThrow('Unbekannte')

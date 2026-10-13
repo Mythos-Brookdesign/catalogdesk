@@ -296,6 +296,23 @@
 .database-location code {
   overflow-wrap: anywhere;
 }
+.database-backup {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.database-backup h3 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.database-backup p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
 .head-actions {
   flex-wrap: wrap;
 }

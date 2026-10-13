@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -168,6 +168,56 @@ describe('local SQLite projects', () => {
     try {
       expect(database.load(saved.id).snapshot).toEqual(snapshot)
       expect(database.list()).toHaveLength(1)
+    } finally {
+      database.close()
+    }
+  })
+  it('creates a private consistent backup and restores it without retaining later changes', () => {
+    const filename = location()
+    const backupFilename = path.join(
+      path.dirname(filename),
+      'catalogdesk-backup.sqlite',
+    )
+    let database = storage.openDatabase(filename)
+    database.setTheme('dark')
+    database.save({ name: 'Before backup', snapshot })
+    expect(database.backupInto(backupFilename).bytes).toBeGreaterThan(0)
+    database.save({ name: 'After backup', snapshot })
+    expect(database.backupInto(backupFilename).bytes).toBeGreaterThan(0)
+    database.save({ name: 'After replacement', snapshot })
+    database.close()
+
+    expect(storage.restoreDatabase(filename, backupFilename)).toEqual({
+      setupRequired: true,
+    })
+    database = storage.openDatabase(filename)
+    try {
+      expect(database.isHealthy()).toBe(true)
+      expect(database.getTheme()).toBe('dark')
+      expect(
+        database
+          .list()
+          .map((project) => project.name)
+          .sort(),
+      ).toEqual(['After backup', 'Before backup'])
+    } finally {
+      database.close()
+    }
+  })
+  it('keeps the active database intact when a selected backup is invalid', () => {
+    const filename = location()
+    const invalidBackup = path.join(path.dirname(filename), 'invalid.sqlite')
+    let database = storage.openDatabase(filename)
+    database.save({ name: 'Keep active data', snapshot })
+    database.close()
+    writeFileSync(invalidBackup, 'not a SQLite database')
+
+    expect(() => storage.restoreDatabase(filename, invalidBackup)).toThrow()
+    database = storage.openDatabase(filename)
+    try {
+      expect(database.list().map((project) => project.name)).toEqual([
+        'Keep active data',
+      ])
     } finally {
       database.close()
     }

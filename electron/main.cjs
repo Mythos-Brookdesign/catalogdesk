@@ -312,6 +312,71 @@ app.whenReady().then(async () => {
   function transferBusy() {
     return Boolean(transferController)
   }
+  function databaseBusy() {
+    return connectionTestRunning || shopImportController || transferBusy()
+  }
+  ipcMain.handle('catalog:database-backup', async (event, envelope) => {
+    try {
+      authorize(event, envelope, 'database:manage')
+      if (databaseBusy())
+        return {
+          ok: false,
+          error: 'Bitte zuerst laufende Shopvorgaenge beenden.',
+        }
+      const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: 'CatalogDesk-Datenbank sichern',
+        defaultPath: `CatalogDesk-Sicherung-${new Date().toISOString().slice(0, 10)}.sqlite`,
+        filters: [{ name: 'CatalogDesk-Sicherung', extensions: ['sqlite'] }],
+      })
+      if (canceled || !filePath) return { ok: true, value: null }
+      return {
+        ok: true,
+        value: await projectDatabase.request('backupInto', filePath),
+      }
+    } catch {
+      return {
+        ok: false,
+        error: 'Datenbanksicherung konnte nicht erstellt werden.',
+      }
+    }
+  })
+  ipcMain.handle('catalog:database-restore', async (event, envelope) => {
+    try {
+      authorize(event, envelope, 'database:manage')
+      if (databaseBusy())
+        return {
+          ok: false,
+          error: 'Bitte zuerst laufende Shopvorgaenge beenden.',
+        }
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title: 'CatalogDesk-Sicherung wiederherstellen',
+        properties: ['openFile'],
+        filters: [
+          { name: 'CatalogDesk-Sicherung', extensions: ['sqlite', 'db'] },
+        ],
+      })
+      if (canceled || !filePaths[0]) return { ok: true, value: null }
+      const value = await projectDatabase.request(
+        'restoreDatabase',
+        filePaths[0],
+      )
+      authenticator = createAuthenticator((operation, payload) =>
+        projectDatabase.request(operation, payload),
+      )
+      initialTheme = await projectDatabase.request('getTheme')
+      mainWindow?.setBackgroundColor(
+        initialTheme === 'dark' ? '#181c1a' : '#f7f8fa',
+      )
+      event.sender.send('catalog:auth-expired')
+      return { ok: true, value }
+    } catch {
+      return {
+        ok: false,
+        error:
+          'Sicherung konnte nicht wiederhergestellt werden. Die aktive Datenbank blieb unveraendert.',
+      }
+    }
+  })
   ipcMain.handle('catalog:preview-transfer', async (event, payload) => {
     let requestPayload
     try {

@@ -24,6 +24,15 @@ export function AuthGate() {
       setPassword('')
       setConfirmation('')
       setError('Deine Sitzung ist abgelaufen. Bitte erneut anmelden.')
+      void desktop
+        .authState()
+        .then((result) => {
+          if (!cancelled) setAuth(result)
+        })
+        .catch(() => {
+          if (!cancelled)
+            setError('Lokale Benutzerkonten konnten nicht geladen werden.')
+        })
     })
     desktop
       .authState()
