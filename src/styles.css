@@ -2284,7 +2284,102 @@ tr:last-child td {
 [data-theme='dark'] .dialog::backdrop {
   background: #070b0990;
 }
+.auth-shell {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background-color: var(--background);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0,
+    transparent 15px,
+    color-mix(in srgb, var(--line) 35%, transparent) 15px,
+    color-mix(in srgb, var(--line) 35%, transparent) 16px
+  );
+}
+.auth-panel {
+  width: min(100%, 460px);
+  display: grid;
+  gap: 18px;
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--green);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 18px 50px #26342c14;
+}
+.auth-panel > img {
+  width: 42px;
+  height: 42px;
+}
+.auth-panel .eyebrow {
+  margin-bottom: -13px;
+  font-size: 10px;
+}
+.auth-panel h1 {
+  font-size: 24px;
+  line-height: 1.25;
+}
+.auth-panel > p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.auth-security {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--green) 22%, var(--line));
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--green-light) 68%, var(--surface));
+  color: var(--green);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.auth-security svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.auth-panel form {
+  display: grid;
+  gap: 14px;
+}
+.auth-panel .field {
+  margin: 0;
+}
+.auth-panel .field input {
+  min-height: 40px;
+  font-size: 13px;
+}
+.auth-panel .auth-submit {
+  width: 100%;
+  min-height: 42px;
+  justify-content: center;
+  margin-top: 3px;
+}
+.auth-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+[data-theme='dark'] .auth-panel {
+  box-shadow: 0 18px 50px #0004;
+}
+[data-theme='dark'] .auth-security {
+  background: #23392f;
+}
 @media (max-width: 600px) {
+  .auth-shell {
+    padding: 16px;
+  }
+  .auth-panel {
+    gap: 16px;
+    padding: 24px 20px;
+  }
   .topbar-actions {
     gap: 6px;
   }

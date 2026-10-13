@@ -24,6 +24,7 @@ function unwrap<Value>(result: DatabaseResult<Value>): Value {
 export function ProjectsDialog({
   snapshot,
   active,
+  canWrite,
   onSaved,
   onOpen,
   onDeleted,
@@ -31,6 +32,7 @@ export function ProjectsDialog({
 }: {
   snapshot: ProjectSnapshot | null
   active: ProjectSummary | null
+  canWrite: boolean
   onSaved: (summary: ProjectSummary, snapshot: ProjectSnapshot) => void
   onOpen: (project: SavedProject) => void
   onDeleted: (id: string) => void
@@ -151,14 +153,16 @@ export function ProjectsDialog({
               required
               maxLength={80}
               value={name}
-              disabled={!desktop || working || loading}
+              disabled={!desktop || !canWrite || working || loading}
               onChange={(event) => setName(event.target.value)}
             />
           </label>
           <div className="project-save-actions">
             <button
               className="button primary"
-              disabled={!desktop || working || loading || !name.trim()}
+              disabled={
+                !desktop || !canWrite || working || loading || !name.trim()
+              }
               type="submit"
             >
               <Save size={16} />
@@ -168,7 +172,7 @@ export function ProjectsDialog({
               <button
                 className="button"
                 type="button"
-                disabled={working || loading || !name.trim()}
+                disabled={!canWrite || working || loading || !name.trim()}
                 onClick={() => void save(true)}
               >
                 Kopie speichern
@@ -191,7 +195,7 @@ export function ProjectsDialog({
           className="icon-button"
           title="Liste aktualisieren"
           aria-label="Projektliste aktualisieren"
-          disabled={!desktop || working || loading}
+          disabled={!desktop || !canWrite || working || loading}
           onClick={() =>
             void execute(async () => {
               setProjects(unwrap(await desktop!.listProjects()))
@@ -226,7 +230,7 @@ export function ProjectsDialog({
                 className="icon-button"
                 title="Projekt oeffnen"
                 aria-label={`Projekt ${project.name} oeffnen`}
-                disabled={working}
+                disabled={working || !canWrite}
                 onClick={() =>
                   void execute(async () => {
                     onOpen(unwrap(await desktop!.loadProject(project.id)))
@@ -239,7 +243,7 @@ export function ProjectsDialog({
                 className="icon-button"
                 title="Projekt loeschen"
                 aria-label={`Projekt ${project.name} loeschen`}
-                disabled={working}
+                disabled={working || !canWrite}
                 onClick={() => setDeleting(project)}
               >
                 <Trash2 size={16} />

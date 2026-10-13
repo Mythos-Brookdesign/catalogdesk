@@ -24,6 +24,13 @@ const operations = new Set([
   'finishTransfer',
   'transferDetail',
   'listTransfers',
+  'authState',
+  'findUser',
+  'createInitialAdmin',
+  'createUser',
+  'listUsers',
+  'setUserActive',
+  'recordLogin',
 ])
 parentPort.on('message', ({ id, operation, payload }) => {
   try {

@@ -17,6 +17,7 @@ import {
   HardDrive,
   ListFilter,
   LoaderCircle,
+  LogOut,
   Package,
   Pencil,
   PlugZap,
@@ -27,6 +28,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
+  UsersRound,
   X,
 } from 'lucide-react'
 import {
@@ -45,12 +47,14 @@ import type {
   Product,
 } from './domain/catalog'
 import type { ImportedShop } from './types/desktop'
+import type { AppUser } from './types/desktop'
 import { demoCsv, demoImages, demoName } from './data/demo'
 import { Dialog } from './components/Dialog'
 import { ThemeToggle } from './components/ThemeToggle'
 import { TransferDialog } from './components/TransferDialog'
 import { HistoryDialog } from './components/HistoryDialog'
 import { ProjectsDialog } from './components/ProjectsDialog'
+import { UsersDialog } from './components/UsersDialog'
 import type {
   ProjectSnapshot,
   ProjectSummary,
@@ -109,6 +113,7 @@ function RowEditor({
   onExclude,
   onClose,
   busy,
+  readOnly,
 }: {
   row: CatalogRow
   draftValues: Product
@@ -117,6 +122,7 @@ function RowEditor({
   onExclude: () => void
   onClose: () => void
   busy: boolean
+  readOnly: boolean
 }) {
   const [draft, setDraft] = useState<Product>(draftValues)
   return (
@@ -184,6 +190,7 @@ function RowEditor({
                   <textarea
                     rows={3}
                     value={draft[key]}
+                    readOnly={readOnly}
                     onChange={(event) =>
                       setDraft({ ...draft, [key]: event.target.value })
                     }
@@ -191,6 +198,7 @@ function RowEditor({
                 ) : (
                   <input
                     value={draft[key]}
+                    readOnly={readOnly}
                     onChange={(event) =>
                       setDraft({ ...draft, [key]: event.target.value })
                     }
@@ -216,14 +224,18 @@ function RowEditor({
             ))}
           </div>
           <div className="editor-actions">
-            <button type="submit" className="button primary" disabled={busy}>
+            <button
+              type="submit"
+              className="button primary"
+              disabled={busy || readOnly}
+            >
               <Check size={16} />
               Korrektur &uuml;bernehmen
             </button>
             <button
               type="button"
               className="button subtle"
-              disabled={busy}
+              disabled={busy || readOnly}
               onClick={onExclude}
             >
               {row.excluded ? <RotateCcw size={16} /> : <X size={16} />}
@@ -236,7 +248,13 @@ function RowEditor({
   )
 }
 
-export default function App() {
+export default function App({
+  currentUser,
+  onLogout,
+}: {
+  currentUser?: AppUser
+  onLogout?: () => void
+} = {}) {
   const request = useCatalogWorker()
   const fileInput = useRef<HTMLInputElement>(null)
   const [dataset, setDataset] = useState<Dataset | null>(null)
@@ -263,6 +281,7 @@ export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>(loadProfiles)
   const [profileId, setProfileId] = useState('')
   const [profileDialog, setProfileDialog] = useState(false)
+  const [usersDialog, setUsersDialog] = useState(false)
   const [projectsDialog, setProjectsDialog] = useState(false)
   const [activeProject, setActiveProject] = useState<ProjectSummary | null>(
     null,
@@ -288,6 +307,9 @@ export default function App() {
     id: string
   } | null>(null)
   const busy = importing || analyzing || exporting
+  const canWriteCatalog = !currentUser || currentUser.role !== 'reader'
+  const canReadShop = !currentUser || currentUser.role !== 'reader'
+  const canManageUsers = currentUser?.role === 'admin'
   const dirty = Object.keys(edits).length > 0 || excluded.length > 0
   const snapshot: ProjectSnapshot | null = dataset
     ? { filename, demo: isDemo, dataset, mapping, options, edits, excluded }
@@ -756,12 +778,45 @@ export default function App() {
               <ShieldCheck size={15} />
               Lokale Daten
             </span>
+            {currentUser && (
+              <span className="account-tag" title={currentUser.username}>
+                {currentUser.displayName}
+                <small>
+                  {currentUser.role === 'admin'
+                    ? 'Administrator'
+                    : currentUser.role === 'editor'
+                      ? 'Bearbeiter'
+                      : 'Leser'}
+                </small>
+              </span>
+            )}
+            {canManageUsers && (
+              <button
+                className="icon-button"
+                title="Benutzerkonten verwalten"
+                aria-label="Benutzerkonten verwalten"
+                onClick={() => setUsersDialog(true)}
+              >
+                <UsersRound size={16} />
+              </button>
+            )}
+            {onLogout && (
+              <button
+                className="button shop-trigger"
+                title="Abmelden"
+                aria-label="Abmelden"
+                onClick={() => void onLogout()}
+              >
+                <LogOut size={16} />
+                <span>Abmelden</span>
+              </button>
+            )}
             <button
               className={`button shop-trigger ${checkedShop ? 'shop-checked' : ''}`}
               onClick={() => setShopDialog(true)}
               title="WooCommerce-Shopverbindung"
               aria-label="Shopverbindung"
-              disabled={busy}
+              disabled={busy || !canReadShop}
             >
               {checkedShop ? <CheckCircle2 size={16} /> : <PlugZap size={16} />}
               <span>Shopverbindung</span>
@@ -803,7 +858,7 @@ export default function App() {
             {dataset && (
               <button
                 className="button"
-                disabled={busy || !window.catalogDesktop}
+                disabled={busy || !canWriteCatalog || !window.catalogDesktop}
                 onClick={() => setProjectsDialog(true)}
               >
                 <Save size={16} />
@@ -1088,7 +1143,7 @@ export default function App() {
                                   type="checkbox"
                                   aria-label={`Datensatz ${row.index + 1} ausschliessen`}
                                   checked={row.excluded}
-                                  disabled={busy}
+                                  disabled={busy || !canWriteCatalog}
                                   onChange={() => toggleExclude(row.index)}
                                 />
                               </td>
@@ -1155,7 +1210,7 @@ export default function App() {
                               <td>
                                 <button
                                   className="icon-button"
-                                  disabled={busy}
+                                  disabled={busy || !canWriteCatalog}
                                   title="Produkt bearbeiten"
                                   aria-label={`Datensatz ${row.index + 1} bearbeiten`}
                                   onClick={() => setSelected(row.index)}
@@ -1227,6 +1282,7 @@ export default function App() {
                       }}
                       options={options}
                       busy={busy}
+                      readOnly={!canWriteCatalog}
                       onClose={() => setSelected(null)}
                       onExclude={() => toggleExclude(selectedRow.index)}
                       onSave={(draft) => {
@@ -1257,7 +1313,7 @@ export default function App() {
                     <select
                       aria-label="Zuordnungsprofil"
                       value={profileId}
-                      disabled={busy}
+                      disabled={busy || !canWriteCatalog}
                       onChange={(event) => {
                         const profile = profiles.find(
                           (item) => item.id === event.target.value,
@@ -1295,6 +1351,7 @@ export default function App() {
                     </select>
                     <button
                       className="button"
+                      disabled={!canWriteCatalog}
                       onClick={() => {
                         setProfileName(
                           profiles.find((item) => item.id === profileId)
@@ -1324,7 +1381,7 @@ export default function App() {
                         <select
                           aria-label={`Quellspalte fuer ${label}`}
                           value={mapping[key]}
-                          disabled={busy}
+                          disabled={busy || !canWriteCatalog}
                           onChange={(event) =>
                             queueMapping({
                               mapping: {
@@ -1378,7 +1435,7 @@ export default function App() {
                       <input
                         type="checkbox"
                         checked={options.trim}
-                        disabled={busy}
+                        disabled={busy || !canWriteCatalog}
                         onChange={(event) => {
                           invalidateAnalysis()
                           setOptions({ ...options, trim: event.target.checked })
@@ -1390,7 +1447,7 @@ export default function App() {
                       <input
                         type="checkbox"
                         checked={options.normalizePrices}
-                        disabled={busy}
+                        disabled={busy || !canWriteCatalog}
                         onChange={(event) => {
                           invalidateAnalysis()
                           setOptions({
@@ -1404,7 +1461,7 @@ export default function App() {
                       <span>Zahlenformat der Quelle</span>
                       <select
                         value={options.priceFormat}
-                        disabled={busy}
+                        disabled={busy || !canWriteCatalog}
                         onChange={(event) => {
                           invalidateAnalysis()
                           setOptions({
@@ -1526,6 +1583,7 @@ export default function App() {
                         className="button"
                         disabled={
                           !window.catalogDesktop ||
+                          !canWriteCatalog ||
                           busy ||
                           !analysis ||
                           analysis.missing.length > 0 ||
@@ -1538,7 +1596,7 @@ export default function App() {
                       </button>
                       <button
                         className="button primary"
-                        disabled={!canExport}
+                        disabled={!canExport || !canWriteCatalog}
                         onClick={() => void saveExport()}
                       >
                         {exporting ? (
@@ -1624,6 +1682,7 @@ export default function App() {
               stock: row.product.stock,
             }))}
           onClose={() => setTransferDialog(false)}
+          canExecute={canManageUsers}
           onHistory={() => {
             setTransferDialog(false)
             setHistoryDialog(true)
@@ -1631,13 +1690,23 @@ export default function App() {
         />
       )}
       {historyDialog && (
-        <HistoryDialog onClose={() => setHistoryDialog(false)} />
+        <HistoryDialog
+          canVerify={canWriteCatalog}
+          onClose={() => setHistoryDialog(false)}
+        />
+      )}
+      {usersDialog && currentUser && (
+        <UsersDialog
+          currentUser={currentUser.id}
+          onClose={() => setUsersDialog(false)}
+        />
       )}
       {shopDialog && (
         <ShopConnectionDialog
           checked={checkedShop}
           onChecked={setCheckedShop}
           onImported={receiveShopImport}
+          canManageConnection={canManageUsers}
           onClose={() => setShopDialog(false)}
         />
       )}
@@ -1674,6 +1743,7 @@ export default function App() {
         <ProjectsDialog
           snapshot={snapshot}
           active={activeProject}
+          canWrite={canWriteCatalog}
           onSaved={(summary, saved) => {
             setActiveProject(summary)
             setSavedSnapshot(saved)

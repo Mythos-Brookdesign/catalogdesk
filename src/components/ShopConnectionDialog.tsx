@@ -24,11 +24,13 @@ export function ShopConnectionDialog({
   checked,
   onChecked,
   onImported,
+  canManageConnection = true,
   onClose,
 }: {
   checked: CheckedShop | null
   onChecked: (result: CheckedShop | null) => void
   onImported: (result: ImportedShop) => void
+  canManageConnection?: boolean
   onClose: () => void
 }) {
   const desktop = window.catalogDesktop
@@ -81,7 +83,7 @@ export function ShopConnectionDialog({
   }, [desktop])
 
   async function saveConnection() {
-    if (!desktop || busy) return
+    if (!desktop || !canManageConnection || busy) return
     setSaving(true)
     setError('')
     setNotice('')
@@ -109,7 +111,7 @@ export function ShopConnectionDialog({
   }
 
   async function deleteConnection() {
-    if (!desktop || busy) return
+    if (!desktop || !canManageConnection || busy) return
     setSaving(true)
     setError('')
     setNotice('')
@@ -359,7 +361,13 @@ export function ShopConnectionDialog({
             <button
               className="button"
               type="button"
-              disabled={!consumerKey || !consumerSecret || !url || busy}
+              disabled={
+                !canManageConnection ||
+                !consumerKey ||
+                !consumerSecret ||
+                !url ||
+                busy
+              }
               onClick={() => void saveConnection()}
             >
               <Save size={16} />
@@ -376,16 +384,18 @@ export function ShopConnectionDialog({
       {storedUrl && (
         <div className="shop-footer">
           <span className="shop-url">Gespeichert: {storedUrl}</span>
-          <button
-            className="icon-button"
-            type="button"
-            title="Gespeicherte Verbindung loeschen"
-            aria-label="Gespeicherte Verbindung loeschen"
-            disabled={busy}
-            onClick={() => setConfirmDelete(true)}
-          >
-            <Trash2 size={17} />
-          </button>
+          {canManageConnection && (
+            <button
+              className="icon-button"
+              type="button"
+              title="Gespeicherte Verbindung loeschen"
+              aria-label="Gespeicherte Verbindung loeschen"
+              disabled={busy}
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 size={17} />
+            </button>
+          )}
         </div>
       )}
       {confirmDelete && (

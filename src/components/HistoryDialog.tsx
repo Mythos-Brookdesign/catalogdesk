@@ -5,7 +5,13 @@ import { ChangeValues } from './TransferDialog'
 import { transferLabels } from '../lib/transfer'
 import type { HistorySummary, TransferRun } from '../types/desktop'
 
-export function HistoryDialog({ onClose }: { onClose: () => void }) {
+export function HistoryDialog({
+  onClose,
+  canVerify = true,
+}: {
+  onClose: () => void
+  canVerify?: boolean
+}) {
   const desktop = window.catalogDesktop
   const [page, setPage] = useState(0)
   const [runs, setRuns] = useState<HistorySummary[]>([])
@@ -216,18 +222,19 @@ export function HistoryDialog({ onClose }: { onClose: () => void }) {
                 </tbody>
               </table>
             </div>
-            {detail.items.some((item) =>
-              ['sending', 'unknown'].includes(item.status),
-            ) && (
-              <button
-                className="button"
-                disabled={busy}
-                onClick={() => void open(detail.id, true)}
-              >
-                <RefreshCw size={16} />
-                Unklare Ergebnisse lesend nachpruefen
-              </button>
-            )}
+            {canVerify &&
+              detail.items.some((item) =>
+                ['sending', 'unknown'].includes(item.status),
+              ) && (
+                <button
+                  className="button"
+                  disabled={busy}
+                  onClick={() => void open(detail.id, true)}
+                >
+                  <RefreshCw size={16} />
+                  Unklare Ergebnisse lesend nachpruefen
+                </button>
+              )}
             <h3 className="history-events-title">Ereignisprotokoll</h3>
             <ol className="history-events">
               {detail.events.map((event) => (

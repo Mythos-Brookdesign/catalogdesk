@@ -3,6 +3,27 @@ export type ShopConnection = {
   consumerKey: string
   consumerSecret: string
 }
+export type AppRole = 'admin' | 'editor' | 'reader'
+export type AppUser = {
+  id: string
+  username: string
+  displayName: string
+  role: AppRole
+}
+export type AuthResult =
+  { ok: true; user: AppUser } | { ok: false; error: string }
+export type AuthStatus = { setupRequired: boolean; user: AppUser | null }
+export type UserRecord = AppUser & {
+  active: boolean
+  createdAt: string
+  lastLoginAt: string | null
+}
+export type AccountInput = {
+  username: string
+  displayName: string
+  password: string
+  role: AppRole
+}
 export type TransferValues = { regular_price?: string; stock_quantity?: number }
 export type TransferProduct = {
   id: number
@@ -125,6 +146,21 @@ export type DatabaseResult<Value> =
 declare global {
   interface Window {
     catalogDesktop?: {
+      authState: () => Promise<AuthStatus>
+      bootstrapAdmin: (
+        payload: Omit<AccountInput, 'role'>,
+      ) => Promise<AuthResult>
+      login: (
+        payload: Pick<AccountInput, 'username' | 'password'>,
+      ) => Promise<AuthResult>
+      logout: () => Promise<boolean>
+      onAuthExpired: (callback: () => void) => () => void
+      listUsers: () => Promise<DatabaseResult<UserRecord[]>>
+      createUser: (payload: AccountInput) => Promise<DatabaseResult<UserRecord>>
+      setUserActive: (payload: {
+        id: string
+        active: boolean
+      }) => Promise<DatabaseResult<boolean>>
       previewTransfer: (payload: {
         products: { sku: string; price: string; stock: string }[]
         fields: ('price' | 'stock')[]

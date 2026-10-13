@@ -17,6 +17,7 @@ const { testConnection } = require('./shop.cjs')
 const { importShopProducts } = require('./shop-import.cjs')
 const { createDatabaseClient } = require('./database-client.cjs')
 const { createShopStore } = require('./shop-store.cjs')
+const { createAuthenticator } = require('./auth.cjs')
 const {
   previewTransfer,
   executeTransfer,
@@ -29,6 +30,7 @@ const entryUrl = development
   : 'catalog://app/index.html'
 let mainWindow
 let projectDatabase
+let authenticator
 let initialTheme = 'light'
 let transferController = null
 let transferPromise = null
@@ -54,6 +56,23 @@ if (!app.isPackaged && process.env.CATALOGDESK_TEST_USER_DATA) {
 function validateSender(event) {
   if (!trustedSender(event, mainWindow, entryUrl))
     throw new Error('Untrusted IPC sender')
+}
+
+function authorize(event, envelope, permission) {
+  validateSender(event)
+  try {
+    return {
+      user: authenticator.requireSession(envelope?.sessionToken, permission),
+      payload: envelope?.payload,
+    }
+  } catch (error) {
+    if (error.message.startsWith('Sitzung abgelaufen')) {
+      try {
+        event.sender.send('catalog:auth-expired')
+      } catch {}
+    }
+    throw error
+  }
 }
 
 function createWindow() {
@@ -93,9 +112,11 @@ app.whenReady().then(async () => {
   for (const operation of ['summary', 'save', 'delete']) {
     ipcMain.handle(
       `catalog:shop-store-${operation}`,
-      async (event, payload) => {
-        validateSender(event)
+      async (event, envelope) => {
         try {
+          const permission =
+            operation === 'summary' ? 'catalog:read' : 'shop:manage'
+          const { payload } = authorize(event, envelope, permission)
           return { ok: true, value: await shopStore[operation](payload) }
         } catch (error) {
           return { ok: false, error: error.message }
@@ -122,6 +143,83 @@ app.whenReady().then(async () => {
   projectDatabase = createDatabaseClient(
     path.join(app.getPath('userData'), 'data', 'catalogdesk.sqlite'),
   )
+  authenticator = createAuthenticator((operation, payload) =>
+    projectDatabase.request(operation, payload),
+  )
+  ipcMain.handle('catalog:auth-state', async (event, token) => {
+    validateSender(event)
+    return authenticator.status(token)
+  })
+  ipcMain.handle('catalog:auth-bootstrap', async (event, payload) => {
+    validateSender(event)
+    try {
+      return { ok: true, ...(await authenticator.bootstrap(payload)) }
+    } catch {
+      return {
+        ok: false,
+        error:
+          'Ersteinrichtung fehlgeschlagen. Benutzername und sicheres Passwort pruefen.',
+      }
+    }
+  })
+  ipcMain.handle('catalog:auth-login', async (event, payload) => {
+    validateSender(event)
+    try {
+      return { ok: true, ...(await authenticator.login(payload)) }
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
+  })
+  ipcMain.handle('catalog:auth-logout', async (event, token) => {
+    validateSender(event)
+    return authenticator.logout(token)
+  })
+  ipcMain.handle('catalog:users-list', async (event, envelope) => {
+    try {
+      authorize(event, envelope, 'users:manage')
+      return {
+        ok: true,
+        value: await authenticator.listUsers(envelope.sessionToken),
+      }
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
+  })
+  ipcMain.handle('catalog:users-create', async (event, envelope) => {
+    try {
+      authorize(event, envelope, 'users:manage')
+      return {
+        ok: true,
+        value: await authenticator.createUser(
+          envelope.sessionToken,
+          envelope.payload,
+        ),
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error.message.startsWith('Sitzung') ||
+          error.message.startsWith('Fuer ')
+            ? error.message
+            : 'Benutzer konnte nicht angelegt werden. Benutzername eventuell bereits vergeben.',
+      }
+    }
+  })
+  ipcMain.handle('catalog:users-set-active', async (event, envelope) => {
+    try {
+      authorize(event, envelope, 'users:manage')
+      return {
+        ok: true,
+        value: await authenticator.setUserActive(
+          envelope.sessionToken,
+          envelope.payload,
+        ),
+      }
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
+  })
   ipcMain.handle('catalog:get-theme', async (event) => {
     validateSender(event)
     try {
@@ -130,10 +228,14 @@ app.whenReady().then(async () => {
       return { ok: false, error: 'Farbschema konnte nicht geladen werden.' }
     }
   })
-  ipcMain.handle('catalog:set-theme', async (event, theme) => {
-    validateSender(event)
+  ipcMain.handle('catalog:set-theme', async (event, envelope) => {
     try {
-      const value = await projectDatabase.request('setTheme', theme)
+      authorize(event, envelope, 'theme:write')
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
+    try {
+      const value = await projectDatabase.request('setTheme', envelope.payload)
       initialTheme = value
       mainWindow?.setBackgroundColor(value === 'dark' ? '#181c1a' : '#f7f8fa')
       return { ok: true, value }
@@ -142,9 +244,12 @@ app.whenReady().then(async () => {
     }
   })
   for (const operation of ['list', 'load', 'save', 'delete', 'info']) {
-    ipcMain.handle(`catalog:projects-${operation}`, async (event, payload) => {
-      validateSender(event)
+    ipcMain.handle(`catalog:projects-${operation}`, async (event, envelope) => {
       try {
+        const permission = ['save', 'delete'].includes(operation)
+          ? 'projects:write'
+          : 'projects:read'
+        const { payload } = authorize(event, envelope, permission)
         return {
           ok: true,
           value: await projectDatabase.request(operation, payload),
@@ -173,8 +278,8 @@ app.whenReady().then(async () => {
       }
     })
   }
-  ipcMain.handle('catalog:open-csv', async (event) => {
-    validateSender(event)
+  ipcMain.handle('catalog:open-csv', async (event, envelope) => {
+    authorize(event, envelope, 'files:read')
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: 'Produktdatei oeffnen',
       properties: ['openFile'],
@@ -189,8 +294,8 @@ app.whenReady().then(async () => {
       content: await readFile(filePaths[0], 'utf8'),
     }
   })
-  ipcMain.handle('catalog:save-csv', async (event, payload) => {
-    validateSender(event)
+  ipcMain.handle('catalog:save-csv', async (event, envelope) => {
+    const { payload } = authorize(event, envelope, 'files:write')
     const { filename, content } = saveSchema.parse(payload)
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
       title: 'CSV speichern',
@@ -208,7 +313,12 @@ app.whenReady().then(async () => {
     return Boolean(transferController)
   }
   ipcMain.handle('catalog:preview-transfer', async (event, payload) => {
-    validateSender(event)
+    let requestPayload
+    try {
+      requestPayload = authorize(event, payload, 'transfer:preview').payload
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
     if (connectionTestRunning || shopImportController || transferBusy())
       return { ok: false, error: 'Eine Shopanfrage laeuft bereits.' }
     transferPlan = null
@@ -218,7 +328,7 @@ app.whenReady().then(async () => {
       const connection = await shopCredentials(null)
       transferPromise = previewTransfer(
         connection,
-        payload,
+        requestPayload,
         (url, options) => net.fetch(url, options),
         controller.signal,
       )
@@ -238,13 +348,22 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('catalog:execute-transfer', async (event, payload) => {
     validateSender(event)
+    let actor
+    let requestPayload
+    try {
+      const authorized = authorize(event, payload, 'transfer:execute')
+      actor = authorized.user
+      requestPayload = authorized.payload
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
     if (connectionTestRunning || shopImportController || transferBusy())
       return { ok: false, error: 'Eine Shopanfrage laeuft bereits.' }
     if (
       !transferPlan ||
-      !payload ||
-      payload.confirmed !== true ||
-      payload.planId !== transferPlan.plan.id ||
+      !requestPayload ||
+      requestPayload.confirmed !== true ||
+      requestPayload.planId !== transferPlan.plan.id ||
       Date.now() > transferPlan.expires
     )
       return {
@@ -261,9 +380,15 @@ app.whenReady().then(async () => {
       transferPromise = executeTransfer(
         connection,
         cached,
-        payload.selected,
+        requestPayload.selected,
         (url, options) => net.fetch(url, options),
-        (operation, input) => projectDatabase.request(operation, input),
+        (operation, input) =>
+          projectDatabase.request(
+            operation,
+            ['startTransfer', 'recordTransfer'].includes(operation)
+              ? { ...input, actorId: actor.id, actorUsername: actor.username }
+              : input,
+          ),
         { signal: controller.signal },
       )
       return { ok: true, value: await transferPromise }
@@ -278,8 +403,8 @@ app.whenReady().then(async () => {
       transferPromise = null
     }
   })
-  ipcMain.handle('catalog:cancel-transfer', (event) => {
-    validateSender(event)
+  ipcMain.handle('catalog:cancel-transfer', (event, envelope) => {
+    authorize(event, envelope, 'transfer:execute')
     transferController?.abort()
   })
   for (const [channel, operation] of [
@@ -287,11 +412,16 @@ app.whenReady().then(async () => {
     ['history-detail', 'transferDetail'],
   ]) {
     ipcMain.handle(`catalog:${channel}`, async (event, payload) => {
-      validateSender(event)
       try {
+        authorize(event, payload, 'history:read')
+      } catch (error) {
+        return { ok: false, error: error.message }
+      }
+      try {
+        const requestPayload = payload.payload
         return {
           ok: true,
-          value: await projectDatabase.request(operation, payload),
+          value: await projectDatabase.request(operation, requestPayload),
         }
       } catch {
         return { ok: false, error: 'Historie konnte nicht geladen werden.' }
@@ -299,19 +429,33 @@ app.whenReady().then(async () => {
     })
   }
   ipcMain.handle('catalog:verify-history', async (event, id) => {
-    validateSender(event)
+    let actor
+    let requestId
+    try {
+      const authorized = authorize(event, id, 'history:verify')
+      actor = authorized.user
+      requestId = authorized.payload
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
     if (connectionTestRunning || shopImportController || transferBusy())
       return { ok: false, error: 'Eine Shopanfrage laeuft bereits.' }
     const controller = new AbortController()
     transferController = controller
     try {
       const connection = await shopCredentials(null)
-      const run = await projectDatabase.request('transferDetail', id)
+      const run = await projectDatabase.request('transferDetail', requestId)
       transferPromise = verifyTransfer(
         connection,
         run,
         (url, options) => net.fetch(url, options),
-        (operation, input) => projectDatabase.request(operation, input),
+        (operation, input) =>
+          projectDatabase.request(
+            operation,
+            ['recordTransfer'].includes(operation)
+              ? { ...input, actorId: actor.id, actorUsername: actor.username }
+              : input,
+          ),
       )
       return { ok: true, value: await transferPromise }
     } catch {
@@ -326,16 +470,24 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.handle('catalog:test-shop', async (event, payload) => {
-    validateSender(event)
+    try {
+      authorize(event, payload, 'shop:read')
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
     if (connectionTestRunning || shopImportController || transferBusy())
       return { ok: false, error: 'Ein Verbindungstest laeuft bereits.' }
     connectionTestRunning = true
     try {
-      const connection = await shopCredentials(payload)
+      const connection = await shopCredentials(payload.payload)
       const result = await testConnection(connection, (url, options) =>
         net.fetch(url, options),
       )
-      return await rememberExplicitShopCredentials(payload, connection, result)
+      return await rememberExplicitShopCredentials(
+        payload.payload,
+        connection,
+        result,
+      )
     } catch (error) {
       return { ok: false, error: error.message }
     } finally {
@@ -343,13 +495,17 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.handle('catalog:import-shop', async (event, payload) => {
-    validateSender(event)
+    try {
+      authorize(event, payload, ['shop:read', 'shop:import', 'catalog:write'])
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
     if (connectionTestRunning || shopImportController || transferBusy())
       return { ok: false, error: 'Eine Shopanfrage laeuft bereits.' }
     const controller = new AbortController()
     shopImportController = controller
     try {
-      const connection = await shopCredentials(payload)
+      const connection = await shopCredentials(payload.payload)
       const result = await importShopProducts(
         connection,
         (url, options) => net.fetch(url, options),
@@ -364,15 +520,19 @@ app.whenReady().then(async () => {
           },
         },
       )
-      return await rememberExplicitShopCredentials(payload, connection, result)
+      return await rememberExplicitShopCredentials(
+        payload.payload,
+        connection,
+        result,
+      )
     } catch (error) {
       return { ok: false, error: error.message }
     } finally {
       shopImportController = null
     }
   })
-  ipcMain.handle('catalog:cancel-shop-import', (event) => {
-    validateSender(event)
+  ipcMain.handle('catalog:cancel-shop-import', (event, envelope) => {
+    authorize(event, envelope, ['shop:read', 'shop:import', 'catalog:write'])
     shopImportController?.abort()
   })
   app.on('before-quit', () => shopImportController?.abort())

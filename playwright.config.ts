@@ -22,7 +22,7 @@ export default defineConfig({
       testMatch: 'browser.spec.ts',
       use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium' },
     },
-    { name: 'electron', testMatch: /(?:electron|transfer)\.spec\.ts/ },
+    { name: 'electron', testMatch: /(?:electron|transfer|auth)\.spec\.ts/ },
   ],
   webServer: {
     command: 'npm run dev:web',

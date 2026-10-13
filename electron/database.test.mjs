@@ -48,7 +48,7 @@ describe('local SQLite projects', () => {
     database.close()
     const old = new DatabaseSync(filename)
     old.exec(
-      'DROP TABLE transfer_events; DROP TABLE transfer_runs; PRAGMA user_version = 2',
+      'DROP TABLE transfer_events; DROP TABLE transfer_runs; DROP TABLE app_users; PRAGMA user_version = 2',
     )
     old.close()
     database = storage.openDatabase(filename)
@@ -60,8 +60,17 @@ describe('local SQLite projects', () => {
       stock_quantity: 2,
       manage_stock: true,
     }
+    const actor = database.createInitialAdmin({
+      username: 'admin',
+      displayName: 'Admin',
+      role: 'admin',
+      salt: '0'.repeat(32),
+      passwordHash: '1'.repeat(128),
+    })
     const run = database.startTransfer({
       url: 'https://example.com/',
+      actorId: actor.id,
+      actorUsername: actor.username,
       entries: [
         {
           sku: 'A',
@@ -76,6 +85,8 @@ describe('local SQLite projects', () => {
       runId: run.id,
       itemId: run.items[0].id,
       status: 'sending',
+      actorId: actor.id,
+      actorUsername: actor.username,
       message: 'Schreibversuch',
       observed: before,
     })
@@ -83,6 +94,8 @@ describe('local SQLite projects', () => {
       runId: run.id,
       itemId: run.items[0].id,
       status: 'unknown',
+      actorId: actor.id,
+      actorUsername: actor.username,
       message: 'Unklar',
       observed: null,
     })
@@ -91,6 +104,10 @@ describe('local SQLite projects', () => {
     database = storage.openDatabase(filename)
     try {
       expect(database.transferDetail(run.id).events).toHaveLength(2)
+      expect(database.transferDetail(run.id).actorUsername).toBe('admin')
+      expect(database.transferDetail(run.id).events[0].actorUsername).toBe(
+        'admin',
+      )
       expect(database.transferDetail(run.id).items[0]).toMatchObject({
         status: 'unknown',
         before,
@@ -110,7 +127,7 @@ describe('local SQLite projects', () => {
     database.close()
     const old = new DatabaseSync(filename)
     old.exec(
-      'DROP TABLE transfer_events; DROP TABLE transfer_runs; DROP TABLE settings; PRAGMA user_version = 1',
+      'DROP TABLE transfer_events; DROP TABLE transfer_runs; DROP TABLE app_users; DROP TABLE settings; PRAGMA user_version = 1',
     )
     old.close()
     database = storage.openDatabase(filename)
@@ -203,11 +220,11 @@ describe('local SQLite projects', () => {
     const filename = location()
     storage.openDatabase(filename).close()
     const database = new DatabaseSync(filename)
-    database.exec('PRAGMA user_version = 4')
+    database.exec('PRAGMA user_version = 6')
     database.close()
     expect(() => storage.openDatabase(filename)).toThrow('neueren')
     const check = new DatabaseSync(filename)
-    expect(check.prepare('PRAGMA user_version').get().user_version).toBe(4)
+    expect(check.prepare('PRAGMA user_version').get().user_version).toBe(6)
     check.close()
   })
 })

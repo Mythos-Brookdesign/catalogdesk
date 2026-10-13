@@ -3,13 +3,17 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import Papa from 'papaparse'
+import {
+  initializeTestAdmin,
+  launchAuthenticatedElectron,
+} from './auth-helpers'
 
 test('restores the SQLite theme before rendering after an Electron restart', async ({
   playwright,
 }, testInfo) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'catalogdesk-theme-'))
   const launch = () =>
-    playwright._electron.launch({
+    launchAuthenticatedElectron(playwright, {
       args: ['.'],
       env: {
         ...process.env,
@@ -63,7 +67,7 @@ test('remembers encrypted shop credentials across restarts without exposing them
     path.join(os.tmpdir(), 'catalogdesk-persistent-shop-'),
   )
   const launch = () =>
-    playwright._electron.launch({
+    launchAuthenticatedElectron(playwright, {
       args: ['.'],
       env: {
         ...process.env,
@@ -204,7 +208,7 @@ test('imports all WooCommerce pages with decimal prices and saves the catalog in
   const directory = await mkdtemp(
     path.join(os.tmpdir(), 'catalogdesk-shop-import-'),
   )
-  const application = await playwright._electron.launch({
+  const application = await launchAuthenticatedElectron(playwright, {
     args: ['.'],
     env: {
       ...process.env,
@@ -294,6 +298,7 @@ test('imports all WooCommerce pages with decimal prices and saves the catalog in
       .click()
     await expect(dialog.getByRole('status')).toContainText('SQLite gespeichert')
     await page.reload()
+    await initializeTestAdmin(page)
     await page
       .getByRole('button', { name: 'Importprojekte', exact: true })
       .click()
@@ -323,7 +328,7 @@ test('keeps the old catalog on failed, cancelled and declined shop imports', asy
   const directory = await mkdtemp(
     path.join(os.tmpdir(), 'catalogdesk-shop-errors-'),
   )
-  const application = await playwright._electron.launch({
+  const application = await launchAuthenticatedElectron(playwright, {
     args: ['.'],
     env: {
       ...process.env,
@@ -435,7 +440,7 @@ test('persists corrected import projects across a full Electron restart', async 
     path.join(os.tmpdir(), 'catalogdesk-projects-'),
   )
   const launch = () =>
-    playwright._electron.launch({
+    launchAuthenticatedElectron(playwright, {
       args: ['.'],
       env: {
         ...process.env,
@@ -566,9 +571,16 @@ test('persists corrected import projects across a full Electron restart', async 
 test('checks a read-only shop connection through native IPC and keeps keys out of the renderer', async ({
   playwright,
 }, testInfo) => {
-  const application = await playwright._electron.launch({
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), 'catalogdesk-shop-connection-test-'),
+  )
+  const application = await launchAuthenticatedElectron(playwright, {
     args: ['.'],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '' },
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '',
+      CATALOGDESK_TEST_USER_DATA: directory,
+    },
   })
   try {
     const page = await application.firstWindow()
@@ -652,6 +664,7 @@ test('checks a read-only shop connection through native IPC and keeps keys out o
     ).toHaveValue('')
   } finally {
     await application.close()
+    await rm(directory, { recursive: true, force: true })
   }
 })
 
@@ -661,7 +674,7 @@ test('replaces previously saved read-only keys after a successful test and reuse
   const directory = await mkdtemp(
     path.join(os.tmpdir(), 'catalogdesk-replace-shop-'),
   )
-  const application = await playwright._electron.launch({
+  const application = await launchAuthenticatedElectron(playwright, {
     args: ['.'],
     env: {
       ...process.env,
@@ -787,9 +800,13 @@ test('runs the isolated production desktop app and opens and saves local CSV fil
   const source = path.join(directory, 'supplier.csv')
   const output = path.join(directory, 'products.csv')
   await writeFile(source, 'SKU;Name;Preis;Bestand\n001;Notebook;12,50;4')
-  const application = await playwright._electron.launch({
+  const application = await launchAuthenticatedElectron(playwright, {
     args: ['.'],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '' },
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '',
+      CATALOGDESK_TEST_USER_DATA: directory,
+    },
   })
   try {
     const page = await application.firstWindow()

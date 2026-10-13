@@ -39,10 +39,12 @@ export function TransferDialog({
   products,
   onClose,
   onHistory,
+  canExecute,
 }: {
   products: { sku: string; price: string; stock: string }[]
   onClose: () => void
   onHistory: () => void
+  canExecute: boolean
 }) {
   const desktop = window.catalogDesktop
   const [price, setPrice] = useState(true)
@@ -277,7 +279,11 @@ export function TransferDialog({
               <button className="button" onClick={() => setConfirm(false)}>
                 Abbrechen
               </button>
-              <button className="button primary" onClick={() => void execute()}>
+              <button
+                className="button primary"
+                disabled={!canExecute}
+                onClick={() => void execute()}
+              >
                 Bestaetigen und uebertragen
               </button>
             </div>

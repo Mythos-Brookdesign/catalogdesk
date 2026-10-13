@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
-import App from './App.tsx'
+import { AuthGate } from './components/AuthGate'
 
 async function start() {
   let theme = 'light'
@@ -14,7 +14,7 @@ async function start() {
   document.documentElement.dataset.theme = theme
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      <AuthGate />
     </StrictMode>,
   )
 }

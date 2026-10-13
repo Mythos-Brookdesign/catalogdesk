@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { launchAuthenticatedElectron } from './auth-helpers'
 
 test('records conflicts and ambiguous writes and only rechecks them with GET', async ({
   playwright,
@@ -9,7 +10,7 @@ test('records conflicts and ambiguous writes and only rechecks them with GET', a
   const directory = await mkdtemp(
     path.join(os.tmpdir(), 'catalogdesk-transfer-errors-'),
   )
-  const application = await playwright._electron.launch({
+  const application = await launchAuthenticatedElectron(playwright, {
     args: ['.'],
     env: {
       ...process.env,
@@ -154,7 +155,7 @@ test('requires approval for shop writes and preserves exact history after restar
     path.join(os.tmpdir(), 'catalogdesk-transfer-'),
   )
   const launch = () =>
-    playwright._electron.launch({
+    launchAuthenticatedElectron(playwright, {
       args: ['.'],
       env: {
         ...process.env,
