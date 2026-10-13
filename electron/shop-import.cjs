@@ -3,30 +3,34 @@ const { connectionSchema } = require('./shop.cjs')
 
 class ShopImportError extends Error {}
 
-const productSchema = z.object({
-  id: z.number().int().positive(),
-  type: z.string().max(80),
-  sku: z.string(),
-  name: z.string(),
-  regular_price: z.string(),
-  description: z.string(),
-  manage_stock: z.boolean(),
-  stock_quantity: z.number().int().safe().nullable(),
-  categories: z
-    .array(z.object({ id: z.number().int().positive(), name: z.string() }))
-    .max(1000),
-})
+const productSchema = z
+  .object({
+    id: z.number().int().positive(),
+    type: z.string().max(80),
+    sku: z.string(),
+    name: z.string(),
+    regular_price: z.string(),
+    description: z.string(),
+    manage_stock: z.boolean(),
+    stock_quantity: z.number().int().safe().nullable(),
+    categories: z
+      .array(z.object({ id: z.number().int().positive(), name: z.string() }))
+      .max(1000),
+  })
+  .passthrough()
 const pageSchema = z
   .array(
     z.union([
       productSchema.extend({ type: z.literal('simple') }),
-      z.object({
-        id: z.number().int().positive(),
-        type: z
-          .string()
-          .max(80)
-          .refine((type) => type !== 'simple'),
-      }),
+      z
+        .object({
+          id: z.number().int().positive(),
+          type: z
+            .string()
+            .max(80)
+            .refine((type) => type !== 'simple'),
+        })
+        .passthrough(),
     ]),
   )
   .max(100)
@@ -70,6 +74,7 @@ async function importShopProducts(
   let bytes = 0
   const ids = new Set()
   const rows = []
+  const catalogProducts = []
   const skipped = new Map()
   let lastId = 0
   try {
@@ -83,7 +88,7 @@ async function importShopProducts(
         orderby: 'id',
         order: 'asc',
         _fields:
-          'id,type,sku,name,regular_price,description,manage_stock,stock_quantity,categories',
+          'id,type,parent_id,sku,name,slug,status,regular_price,sale_price,price,description,short_description,manage_stock,stock_quantity,stock_status,backorders,weight,dimensions,categories,tags,brands,attributes,default_attributes,meta_data',
       }).toString()
       pageTimer = setTimeout(abort, 15_000)
       const response = await fetcher(endpoint.toString(), {
@@ -171,6 +176,17 @@ async function importShopProducts(
           )
         ids.add(product.id)
         lastId = product.id
+        catalogProducts.push({
+          id: product.id,
+          parentId:
+            Number.isSafeInteger(product.parent_id) && product.parent_id > 0
+              ? product.parent_id
+              : null,
+          type: product.type,
+          sku: typeof product.sku === 'string' ? product.sku : '',
+          name: typeof product.name === 'string' ? product.name : '',
+          payload: product,
+        })
         if (product.type !== 'simple') {
           skipped.set(product.type, (skipped.get(product.type) ?? 0) + 1)
           continue
@@ -216,6 +232,7 @@ async function importShopProducts(
       ok: true,
       url: base.toString(),
       dataset,
+      catalogProducts,
       imported: rows.length,
       total,
       skipped: [...skipped].map(([type, count]) => ({ type, count })),

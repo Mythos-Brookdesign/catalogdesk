@@ -49,6 +49,10 @@ contextBridge.exposeInMainWorld('catalogDesktop', {
     authorized('catalog:shop-store-save', payload),
   deleteShopConnection: () => authorized('catalog:shop-store-delete'),
   listProjects: () => authorized('catalog:projects-list'),
+  shopCatalogInfo: (url) => authorized('catalog:shop-catalog-info', url),
+  loadLatestShopCatalog: () => authorized('catalog:load-latest-shop-catalog'),
+  listShopCatalogProducts: (payload) =>
+    authorized('catalog:shop-catalog-products', payload),
   loadProject: (id) => authorized('catalog:projects-load', id),
   saveProject: (payload) => authorized('catalog:projects-save', payload),
   deleteProject: (payload) => authorized('catalog:projects-delete', payload),

@@ -255,6 +255,8 @@ export default function App({
   currentUser?: AppUser
   onLogout?: () => void
 } = {}) {
+  const desktop = window.catalogDesktop
+  const currentUserId = currentUser?.id
   const request = useCatalogWorker()
   const fileInput = useRef<HTMLInputElement>(null)
   const [dataset, setDataset] = useState<Dataset | null>(null)
@@ -301,6 +303,9 @@ export default function App({
   const [pendingShopImport, setPendingShopImport] =
     useState<ImportedShop | null>(null)
   const [shopImportNotice, setShopImportNotice] = useState('')
+  const [loadingLocalCatalog, setLoadingLocalCatalog] = useState(
+    Boolean(desktop && currentUser),
+  )
   const [pendingMapping, setPendingMapping] = useState<{
     mapping: Mapping
     options: Options
@@ -431,15 +436,28 @@ export default function App({
   }
 
   function applyShopImport(result: ImportedShop) {
+    const shopFilename = `woocommerce-${new URL(result.url).hostname}.csv`
+    const shopMapping = suggestMapping(result.dataset.headers)
+    const shopOptions = { ...defaultOptions, priceFormat: 'en' as const }
+    const shopEdits: Record<number, Partial<Product>> = {}
+    const shopExcluded: number[] = []
     setDataset(result.dataset)
-    setFilename(`woocommerce-${new URL(result.url).hostname}.csv`)
+    setFilename(shopFilename)
     setIsDemo(false)
-    setMapping(suggestMapping(result.dataset.headers))
-    setOptions({ ...defaultOptions, priceFormat: 'en' })
-    setEdits({})
-    setExcluded([])
+    setMapping(shopMapping)
+    setOptions(shopOptions)
+    setEdits(shopEdits)
+    setExcluded(shopExcluded)
     setActiveProject(null)
-    setSavedSnapshot(null)
+    setSavedSnapshot({
+      filename: shopFilename,
+      demo: false,
+      dataset: result.dataset,
+      mapping: shopMapping,
+      options: shopOptions,
+      edits: shopEdits,
+      excluded: shopExcluded,
+    })
     setProfileId('')
     invalidateAnalysis()
     setFilter('all')
@@ -454,10 +472,10 @@ export default function App({
       0,
     )
     setShopImportNotice(
-      `${formatNumber(result.imported)} einfache Produkte aus ${result.url} importiert. ${skipped ? `${formatNumber(skipped)} Produkte uebersprungen: ${result.skipped.map((entry) => `${entry.type} (${entry.count})`).join(', ')}.` : 'Keine Produkte uebersprungen.'} Der Shop wurde nicht veraendert.`,
+      `${formatNumber(result.catalogStored)} Produktdatensaetze aus ${result.url} dauerhaft in SQLite gespeichert. ${formatNumber(result.imported)} einfache Produkte sind im CSV-Arbeitsbereich geladen.${skipped ? ` Weitere Typen (${result.skipped.map((entry) => `${entry.type}: ${formatNumber(entry.count)}`).join(', ')}) bleiben mit Rohdaten lokal gespeichert und sind noch nicht in der Arbeitsansicht bearbeitbar.` : ''} Der Shop wurde nicht veraendert.`,
     )
     setToast(
-      'WooCommerce-Katalog importiert. Arbeitsstand noch nicht gespeichert.',
+      'WooCommerce-Produktdaten lokal gespeichert. Der Shop wurde nicht veraendert.',
     )
   }
 
@@ -466,6 +484,52 @@ export default function App({
     if (dataset && (dirty || projectDirty)) setPendingShopImport(result)
     else applyShopImport(result)
   }
+
+  useEffect(() => {
+    if (!desktop || !currentUserId) return
+    let cancelled = false
+    desktop
+      .loadLatestShopCatalog()
+      .then((result) => {
+        if (cancelled || !result.ok || !result.value) return
+        const catalog = result.value
+        if (!catalog.dataset) {
+          setShopImportNotice(
+            `${formatNumber(catalog.total)} Produktdatensaetze aus ${catalog.url} sind in SQLite gespeichert. Der gespeicherte Katalog enthaelt keine einfachen Produkte fuer die CSV-Arbeitsansicht.`,
+          )
+          return
+        }
+        applyShopImport({
+          ok: true,
+          url: catalog.url,
+          dataset: catalog.dataset,
+          catalogStored: catalog.total,
+          imported: catalog.imported,
+          total: catalog.total,
+          skipped: catalog.skipped,
+          importedAt: catalog.importedAt,
+          credentialsSaved: true,
+        })
+        setShopImportNotice(
+          `${formatNumber(catalog.total)} Produktdatensaetze automatisch aus SQLite geladen. ${formatNumber(catalog.imported)} einfache Produkte in der Arbeitsansicht; ${formatNumber(catalog.total - catalog.imported)} weitere Datensaetze bleiben als Rohdaten gespeichert.`,
+        )
+        setToast('Gespeicherter WooCommerce-Katalog aus SQLite geladen.')
+      })
+      .catch((reason) => {
+        if (!cancelled)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : 'Lokaler Shopkatalog konnte nicht geladen werden.',
+          )
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLocalCatalog(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [currentUserId, desktop])
 
   async function readBrowserFile(file?: File) {
     if (!file) return
@@ -837,7 +901,13 @@ export default function App({
                   ? 'Spaltenzuordnung'
                   : 'Export vorbereiten'}
             </h1>
-            <p>{dataset ? filename : 'Kein Import geoeffnet'}</p>
+            <p>
+              {loadingLocalCatalog
+                ? 'Produktkatalog wird aus SQLite geladen ...'
+                : dataset
+                  ? filename
+                  : 'Kein Import geoeffnet'}
+            </p>
             {dataset && window.catalogDesktop && (
               <span className="project-state">
                 {projectDirty

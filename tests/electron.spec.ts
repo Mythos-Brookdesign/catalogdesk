@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
+import { DatabaseSync } from 'node:sqlite'
 import Papa from 'papaparse'
 import {
   initializeTestAdmin,
@@ -276,8 +277,68 @@ test('imports all WooCommerce pages with decimal prices and saves the catalog in
       page.locator('.stats').getByRole('button', { name: /Exportbereit/ }),
     ).toContainText('101')
     await expect(page.locator('.shop-import-notice')).toContainText(
-      'variable (1)',
+      'variable: 1',
     )
+    const storedDatabase = new DatabaseSync(
+      path.join(directory, 'data', 'catalogdesk.sqlite'),
+    )
+    try {
+      expect(
+        storedDatabase
+          .prepare(
+            'SELECT imported_by_username AS importedBy, product_count AS productCount FROM shop_catalog_imports WHERE shop_url = ?',
+          )
+          .get('https://catalogdesk.local/'),
+      ).toMatchObject({ importedBy: 'test-admin', productCount: 102 })
+      const variable = storedDatabase
+        .prepare(
+          'SELECT product_id AS id, type, payload FROM shop_catalog_products WHERE shop_url = ? AND product_id = ?',
+        )
+        .get('https://catalogdesk.local/', 2)
+      expect(variable).toMatchObject({ id: 2, type: 'variable' })
+      expect(JSON.parse(variable.payload)).toMatchObject({
+        id: 2,
+        type: 'variable',
+      })
+      expect(
+        storedDatabase
+          .prepare(
+            'SELECT COUNT(*) AS count FROM shop_catalog_products WHERE shop_url = ?',
+          )
+          .get('https://catalogdesk.local/').count,
+      ).toBe(102)
+    } finally {
+      storedDatabase.close()
+    }
+    const catalogPage = await page.evaluate(
+      (url) =>
+        window.catalogDesktop!.listShopCatalogProducts({
+          url,
+          page: 0,
+          pageSize: 2,
+        }),
+      'https://catalogdesk.local/',
+    )
+    expect(catalogPage).toMatchObject({
+      ok: true,
+      value: { total: 102, page: 0, pageSize: 2 },
+    })
+    if (catalogPage.ok)
+      expect(catalogPage.value.products[1]).toMatchObject({
+        id: 2,
+        type: 'variable',
+        payload: { id: 2, type: 'variable' },
+      })
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    const shopDialog = page.getByRole('dialog')
+    await expect(shopDialog.locator('.shop-catalog-info')).toContainText(
+      '102 Produktdatensaetze lokal gespeichert',
+    )
+    await shopDialog
+      .getByRole('button', { name: 'Schliessen', exact: true })
+      .click()
     await expect(page.locator('.product-table tbody tr').first()).toContainText(
       '12.50',
     )
@@ -299,6 +360,12 @@ test('imports all WooCommerce pages with decimal prices and saves the catalog in
     await expect(dialog.getByRole('status')).toContainText('SQLite gespeichert')
     await page.reload()
     await initializeTestAdmin(page)
+    await expect(page.locator('.shop-import-notice')).toContainText(
+      'automatisch aus SQLite geladen',
+    )
+    await expect(
+      page.locator('.stats').getByRole('button', { name: /Exportbereit/ }),
+    ).toContainText('101')
     await page
       .getByRole('button', { name: 'Importprojekte', exact: true })
       .click()
@@ -688,6 +755,14 @@ test('discovers WordPress post types and WooCommerce taxonomies without saving k
             JSON.stringify({ namespaces: ['wp/v2', 'wc/v3', 'maker/v1'] }),
             { headers: { 'content-type': 'application/json' } },
           )
+        if (
+          url.pathname.endsWith('/wp/v2/types') &&
+          url.searchParams.get('context') === 'edit'
+        )
+          return new Response(JSON.stringify({ code: 'rest_forbidden' }), {
+            status: 403,
+            headers: { 'content-type': 'application/json' },
+          })
         if (url.pathname.endsWith('/wp/v2/types'))
           return new Response(
             JSON.stringify({
@@ -696,7 +771,13 @@ test('discovers WordPress post types and WooCommerce taxonomies without saving k
                 rest_base: 'products',
                 rest_namespace: 'wc/v3',
                 public: true,
-                taxonomies: ['product_brand'],
+                taxonomies: [
+                  'product_brand',
+                  'product_delivery_time',
+                  'product_unit',
+                  'manufacturer',
+                  'price_evidence',
+                ],
               },
               manufacturer: {
                 name: 'Manufacturers',
@@ -708,6 +789,14 @@ test('discovers WordPress post types and WooCommerce taxonomies without saving k
             }),
             { headers: { 'content-type': 'application/json' } },
           )
+        if (
+          url.pathname.endsWith('/wp/v2/taxonomies') &&
+          url.searchParams.get('context') === 'edit'
+        )
+          return new Response(JSON.stringify({ code: 'rest_forbidden' }), {
+            status: 403,
+            headers: { 'content-type': 'application/json' },
+          })
         if (url.pathname.endsWith('/wp/v2/taxonomies'))
           return new Response(
             JSON.stringify({
@@ -727,6 +816,20 @@ test('discovers WordPress post types and WooCommerce taxonomies without saving k
             ]),
             { headers: { 'content-type': 'application/json' } },
           )
+        if (
+          url.pathname.endsWith('/wc/v3/products/categories') ||
+          url.pathname.endsWith('/wc/v3/products/tags')
+        )
+          return new Response(JSON.stringify([]), {
+            headers: { 'content-type': 'application/json' },
+          })
+        if (url.pathname.endsWith('/wc/v3/products/attributes'))
+          return new Response(
+            JSON.stringify([
+              { id: 4, name: 'Groesse', slug: 'pa_groesse', type: 'select' },
+            ]),
+            { headers: { 'content-type': 'application/json' } },
+          )
         throw new Error('Unexpected REST route')
       }
     })
@@ -739,8 +842,18 @@ test('discovers WordPress post types and WooCommerce taxonomies without saving k
     await dialog.getByRole('button', { name: 'REST-Inhalte entdecken' }).click()
     const result = dialog.getByRole('region', { name: 'REST-API-Entdeckung' })
     await expect(result).toContainText('Manufacturers')
+    await expect(result).toContainText('WordPress-Typen: Teilweise verfuegbar')
+    await expect(result).toContainText(
+      'nur im oeffentlichen Kontext sichtbare Post Types',
+    )
     await expect(result).toContainText('Teilt Produkttaxonomie')
     await expect(result).toContainText('Mit Produkt verknuepft')
+    await expect(result).toContainText('product_delivery_time')
+    await expect(result).toContainText('product_unit')
+    await expect(result).toContainText('price_evidence')
+    await expect(result).toContainText('Produktbezug · nicht im Index')
+    await expect(result).toContainText('Globale Attribute')
+    await expect(result).toContainText('Groesse')
     await expect(result).toContainText('maker/v1')
     await expect(result).toContainText('variable')
     expect(

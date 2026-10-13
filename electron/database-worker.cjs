@@ -31,6 +31,10 @@ const operations = new Set([
   'listUsers',
   'setUserActive',
   'recordLogin',
+  'replaceShopCatalog',
+  'shopCatalogInfo',
+  'loadLatestShopCatalog',
+  'listShopCatalogProducts',
   'backupInto',
   'restoreDatabase',
 ])

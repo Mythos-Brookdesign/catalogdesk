@@ -19,7 +19,14 @@ const types = {
     rest_base: 'products',
     rest_namespace: 'wc/v3',
     public: true,
-    taxonomies: ['product_cat', 'product_brand'],
+    taxonomies: [
+      'product_cat',
+      'product_brand',
+      'delivery_time',
+      'product_unit',
+      'manufacturer',
+      'price_evidence',
+    ],
   },
   manufacturer: {
     name: 'Manufacturers',
@@ -64,6 +71,14 @@ describe('read-only WordPress REST discovery', () => {
         return json([
           { id: 10, type: 'variable', attributes: [], categories: [] },
         ])
+      if (url.pathname.endsWith('/wc/v3/products/categories'))
+        return json([{ id: 2, name: 'Papeterie', slug: 'papeterie' }])
+      if (url.pathname.endsWith('/wc/v3/products/tags'))
+        return json([{ id: 3, name: 'Sale', slug: 'sale' }])
+      if (url.pathname.endsWith('/wc/v3/products/attributes'))
+        return json([
+          { id: 4, name: 'Groesse', slug: 'pa_groesse', type: 'select' },
+        ])
       return json({}, 404)
     })
 
@@ -77,6 +92,14 @@ describe('read-only WordPress REST discovery', () => {
       taxonomiesStatus: 'available',
       productApiStatus: 'available',
       productTypes: ['variable'],
+      commerceResources: {
+        categories: 'available',
+        tags: 'available',
+        attributes: 'available',
+      },
+      productAttributes: [
+        { id: 4, name: 'Groesse', slug: 'pa_groesse', type: 'select' },
+      ],
     })
     expect(result.postTypes).toEqual(
       expect.arrayContaining([
@@ -96,7 +119,31 @@ describe('read-only WordPress REST discovery', () => {
     )
     expect(
       result.taxonomies.find((taxonomy) => taxonomy.slug === 'product_brand'),
-    ).toMatchObject({ attachedToProducts: true })
+    ).toMatchObject({ attachedToProducts: true, restIndexed: true })
+    expect(result.taxonomies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: 'delivery_time',
+          attachedToProducts: true,
+          restIndexed: false,
+        }),
+        expect.objectContaining({
+          slug: 'product_unit',
+          attachedToProducts: true,
+          restIndexed: false,
+        }),
+        expect.objectContaining({
+          slug: 'manufacturer',
+          attachedToProducts: true,
+          restIndexed: false,
+        }),
+        expect.objectContaining({
+          slug: 'price_evidence',
+          attachedToProducts: true,
+          restIndexed: false,
+        }),
+      ]),
+    )
 
     for (const [input, options] of fetcher.mock.calls) {
       const url = new URL(input)
@@ -122,6 +169,9 @@ describe('read-only WordPress REST discovery', () => {
         return json([
           { id: 10, type: 'simple', attributes: [], categories: [] },
         ])
+      if (url.pathname.endsWith('/wc/v3/products/categories')) return json([])
+      if (url.pathname.endsWith('/wc/v3/products/tags')) return json([])
+      if (url.pathname.endsWith('/wc/v3/products/attributes')) return json([])
       return json({ namespaces: ['wc/v3'] })
     })
 
@@ -153,6 +203,9 @@ describe('read-only WordPress REST discovery', () => {
         return json({ brand: { name: 'Brands', types: ['product'] } })
       }
       if (url.pathname.endsWith('/wc/v3/products')) return json([])
+      if (url.pathname.endsWith('/wc/v3/products/categories')) return json([])
+      if (url.pathname.endsWith('/wc/v3/products/tags')) return json([])
+      if (url.pathname.endsWith('/wc/v3/products/attributes')) return json([])
       return json({ namespaces: ['wp/v2', 'wc/v3'] })
     })
 

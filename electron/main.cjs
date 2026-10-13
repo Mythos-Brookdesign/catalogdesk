@@ -260,6 +260,23 @@ app.whenReady().then(async () => {
       }
     })
   }
+  for (const [channel, operation] of [
+    ['shop-catalog-info', 'shopCatalogInfo'],
+    ['load-latest-shop-catalog', 'loadLatestShopCatalog'],
+    ['shop-catalog-products', 'listShopCatalogProducts'],
+  ]) {
+    ipcMain.handle(`catalog:${channel}`, async (event, envelope) => {
+      try {
+        const { payload } = authorize(event, envelope, 'catalog:read')
+        return {
+          ok: true,
+          value: await projectDatabase.request(operation, payload),
+        }
+      } catch (error) {
+        return { ok: false, error: error.message }
+      }
+    })
+  }
   session.defaultSession.setPermissionRequestHandler(
     (_contents, _permission, callback) => callback(false),
   )
@@ -585,8 +602,13 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.handle('catalog:import-shop', async (event, payload) => {
+    let actor
     try {
-      authorize(event, payload, ['shop:read', 'shop:import', 'catalog:write'])
+      actor = authorize(event, payload, [
+        'shop:read',
+        'shop:import',
+        'catalog:write',
+      ]).user
     } catch (error) {
       return { ok: false, error: error.message }
     }
@@ -610,6 +632,29 @@ app.whenReady().then(async () => {
           },
         },
       )
+      if (result.ok) {
+        const { catalogProducts, ...importResult } = result
+        try {
+          const stored = await projectDatabase.request('replaceShopCatalog', {
+            url: result.url,
+            importedAt: result.importedAt,
+            actorId: actor.id,
+            actorUsername: actor.username,
+            products: catalogProducts,
+          })
+          return await rememberExplicitShopCredentials(
+            payload.payload,
+            connection,
+            { ...importResult, catalogStored: stored.productCount },
+          )
+        } catch {
+          return {
+            ok: false,
+            error:
+              'Shopdaten konnten nicht lokal gespeichert werden. Der vorige lokale Katalog blieb erhalten.',
+          }
+        }
+      }
       return await rememberExplicitShopCredentials(
         payload.payload,
         connection,

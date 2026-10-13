@@ -3,6 +3,25 @@ const { connectionSchema } = require('./shop.cjs')
 
 const recordSchema = z.record(z.string(), z.unknown())
 const namespaceListSchema = z.array(z.string().max(120)).max(500)
+const taxonomyResourceSchema = z
+  .array(
+    z.object({
+      id: z.number().int().positive(),
+      name: z.string().max(120),
+      slug: z.string().max(120),
+    }),
+  )
+  .max(100)
+const productAttributeSchema = z
+  .array(
+    z.object({
+      id: z.number().int().positive(),
+      name: z.string().max(120),
+      slug: z.string().max(120),
+      type: z.string().max(80),
+    }),
+  )
+  .max(100)
 const productSampleSchema = z
   .array(
     z.object({
@@ -104,6 +123,7 @@ function normalizeTaxonomies(value) {
               : null,
           types,
           attachedToProducts: types.includes('product'),
+          restIndexed: true,
         },
       ]
     })
@@ -188,52 +208,121 @@ async function discoverShopRest(payload, fetcher) {
   }
 
   try {
-    const [index, types, taxonomies, products] = await Promise.all([
-      inspectEndpoint(
-        fetcher,
-        endpoint(''),
-        headers,
-        controller.signal,
-        (value) => {
-          if (!isRecord(value)) return null
-          const result = namespaceListSchema.safeParse(value.namespaces)
-          return result.success ? result.data : null
-        },
-      ),
-      inspectWordPressEndpoint(
-        fetcher,
-        (context) => endpoint('wp/v2/types', { context }),
-        headers,
-        controller.signal,
-        normalizeTypes,
-      ),
-      inspectWordPressEndpoint(
-        fetcher,
-        (context) => endpoint('wp/v2/taxonomies', { context }),
-        headers,
-        controller.signal,
-        normalizeTaxonomies,
-      ),
-      inspectEndpoint(
-        fetcher,
-        endpoint('wc/v3/products', {
-          per_page: '1',
-          status: 'any',
-          _fields: 'id,type,attributes,categories',
-        }),
-        headers,
-        controller.signal,
-        (value) => {
-          const result = productSampleSchema.safeParse(value)
-          return result.success
-            ? result.data.map((product) => product.type)
-            : null
-        },
-      ),
-    ])
+    const [index, types, taxonomies, products, categories, tags, attributes] =
+      await Promise.all([
+        inspectEndpoint(
+          fetcher,
+          endpoint(''),
+          headers,
+          controller.signal,
+          (value) => {
+            if (!isRecord(value)) return null
+            const result = namespaceListSchema.safeParse(value.namespaces)
+            return result.success ? result.data : null
+          },
+        ),
+        inspectWordPressEndpoint(
+          fetcher,
+          (context) => endpoint('wp/v2/types', { context }),
+          headers,
+          controller.signal,
+          normalizeTypes,
+        ),
+        inspectWordPressEndpoint(
+          fetcher,
+          (context) => endpoint('wp/v2/taxonomies', { context }),
+          headers,
+          controller.signal,
+          normalizeTaxonomies,
+        ),
+        inspectEndpoint(
+          fetcher,
+          endpoint('wc/v3/products', {
+            per_page: '1',
+            status: 'any',
+            _fields: 'id,type,attributes,categories',
+          }),
+          headers,
+          controller.signal,
+          (value) => {
+            const result = productSampleSchema.safeParse(value)
+            return result.success
+              ? result.data.map((product) => product.type)
+              : null
+          },
+        ),
+        inspectEndpoint(
+          fetcher,
+          endpoint('wc/v3/products/categories', {
+            per_page: '1',
+            _fields: 'id,name,slug',
+          }),
+          headers,
+          controller.signal,
+          (value) => {
+            const result = taxonomyResourceSchema.safeParse(value)
+            return result.success ? result.data : null
+          },
+        ),
+        inspectEndpoint(
+          fetcher,
+          endpoint('wc/v3/products/tags', {
+            per_page: '1',
+            _fields: 'id,name,slug',
+          }),
+          headers,
+          controller.signal,
+          (value) => {
+            const result = taxonomyResourceSchema.safeParse(value)
+            return result.success ? result.data : null
+          },
+        ),
+        inspectEndpoint(
+          fetcher,
+          endpoint('wc/v3/products/attributes', {
+            per_page: '100',
+            _fields: 'id,name,slug,type',
+          }),
+          headers,
+          controller.signal,
+          (value) => {
+            const result = productAttributeSchema.safeParse(value)
+            return result.success ? result.data : null
+          },
+        ),
+      ])
 
+    const productTaxonomies = new Set(
+      (types.result ?? [])
+        .filter((type) => ['product', 'product_variation'].includes(type.slug))
+        .flatMap((type) => type.taxonomies),
+    )
+    const discoveredTaxonomies = new Map(
+      (taxonomies.result ?? []).map((taxonomy) => [
+        taxonomy.slug,
+        {
+          ...taxonomy,
+          attachedToProducts:
+            taxonomy.attachedToProducts || productTaxonomies.has(taxonomy.slug),
+        },
+      ]),
+    )
+    for (const slug of productTaxonomies) {
+      if (!discoveredTaxonomies.has(slug)) {
+        discoveredTaxonomies.set(slug, {
+          slug,
+          name: slug,
+          restBase: null,
+          restNamespace: null,
+          types: ['product'],
+          attachedToProducts: true,
+          restIndexed: false,
+        })
+      }
+    }
+    const resolvedTaxonomies = [...discoveredTaxonomies.values()]
     const wooTaxonomies = new Set(
-      (taxonomies.result ?? [])
+      resolvedTaxonomies
         .filter((taxonomy) => taxonomy.attachedToProducts)
         .map((taxonomy) => taxonomy.slug),
     )
@@ -254,10 +343,16 @@ async function discoverShopRest(payload, fetcher) {
       indexStatus: index.status.status,
       postTypes,
       postTypesStatus: types.status.status,
-      taxonomies: taxonomies.result ?? [],
+      taxonomies: resolvedTaxonomies,
       taxonomiesStatus: taxonomies.status.status,
       productApiStatus: products.status.status,
       productTypes: products.result ?? [],
+      commerceResources: {
+        categories: categories.status.status,
+        tags: tags.status.status,
+        attributes: attributes.status.status,
+      },
+      productAttributes: attributes.result ?? [],
     }
   } finally {
     clearTimeout(timeout)

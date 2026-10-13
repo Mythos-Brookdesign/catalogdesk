@@ -12,7 +12,7 @@ it('opens SQLite in a background thread and safely reports startup failures', as
       path.join(directory, 'data', 'catalogdesk.sqlite'),
     )
     expect(await database.request('list')).toEqual([])
-    expect(await database.request('info')).toMatchObject({ schemaVersion: 5 })
+    expect(await database.request('info')).toMatchObject({ schemaVersion: 6 })
     expect(await database.request('getTheme')).toBe('light')
     expect(await database.request('setTheme', 'dark')).toBe('dark')
     const backupFilename = path.join(directory, 'backup.sqlite')
@@ -22,6 +22,7 @@ it('opens SQLite in a background thread and safely reports startup failures', as
     await database.request('setTheme', 'light')
     await database.request('restoreDatabase', backupFilename)
     expect(await database.request('getTheme')).toBe('dark')
+    expect(await database.request('loadLatestShopCatalog')).toBeNull()
     await expect(
       database.request('exec', 'DROP TABLE projects'),
     ).rejects.toThrow('Unbekannte')

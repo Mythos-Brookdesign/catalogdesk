@@ -106,6 +106,7 @@ export type ImportedShop = {
   ok: true
   url: string
   dataset: import('../domain/catalog').Dataset
+  catalogStored: number
   imported: number
   total: number
   skipped: { type: string; count: number }[]
@@ -114,6 +115,29 @@ export type ImportedShop = {
   storageError?: string
 }
 export type ShopImportResult = ImportedShop | { ok: false; error: string }
+export type ShopCatalogInfo = {
+  shopUrl: string
+  importedAt: string
+  importedBy: string
+  productCount: number
+}
+export type StoredShopCatalog = {
+  url: string
+  importedAt: string
+  importedBy: string
+  total: number
+  imported: number
+  skipped: { type: string; count: number }[]
+  dataset: import('../domain/catalog').Dataset | null
+}
+export type StoredShopProduct = {
+  id: number
+  parentId: number | null
+  type: string
+  sku: string
+  name: string
+  payload: Record<string, unknown>
+}
 export type DiscoveryStatus =
   | 'available'
   | 'partial'
@@ -146,10 +170,22 @@ export type ShopRestDiscovery = {
     restNamespace: string | null
     types: string[]
     attachedToProducts: boolean
+    restIndexed: boolean
   }[]
   taxonomiesStatus: DiscoveryStatus
   productApiStatus: DiscoveryStatus
   productTypes: string[]
+  commerceResources: {
+    categories: DiscoveryStatus
+    tags: DiscoveryStatus
+    attributes: DiscoveryStatus
+  }
+  productAttributes: {
+    id: number
+    name: string
+    slug: string
+    type: string
+  }[]
 }
 
 export type ProjectSnapshot = {
@@ -216,6 +252,24 @@ declare global {
       getTheme: () => Promise<DatabaseResult<Theme>>
       setTheme: (theme: Theme) => Promise<DatabaseResult<Theme>>
       savedShopConnection: () => Promise<DatabaseResult<{ url: string } | null>>
+      shopCatalogInfo: (
+        url: string,
+      ) => Promise<DatabaseResult<ShopCatalogInfo | null>>
+      loadLatestShopCatalog: () => Promise<
+        DatabaseResult<StoredShopCatalog | null>
+      >
+      listShopCatalogProducts: (payload: {
+        url: string
+        page?: number
+        pageSize?: number
+      }) => Promise<
+        DatabaseResult<{
+          products: StoredShopProduct[]
+          total: number
+          page: number
+          pageSize: number
+        }>
+      >
       saveShopConnection: (
         payload: ShopConnection,
       ) => Promise<DatabaseResult<{ url: string }>>

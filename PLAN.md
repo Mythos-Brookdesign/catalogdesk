@@ -50,6 +50,7 @@ Eine eigenstaendige Netzwerk-/Team-Edition kann spaeter einen zentralen Synchron
 - Lokales Mehrbenutzermodell, Datenzugriff, Sicherheitsgrenzen und Datenaufbewahrung festlegen.
 - WooCommerce-Datenmodell fuer einfache Produkte und Varianten sowie Konflikt- und Synchronisationsregeln spezifizieren.
 - Aktiven Shop mit einer read-only REST-Entdeckung untersuchen: sichtbare CPTs, Taxonomien, Namespaces und WooCommerce-Produktrouten dynamisch auflisten.
+- Zielumgebung bestaetigt: WordPress 7.1.3, WooCommerce 11.2.1 und Germanized fuer WooCommerce 4.1.4; keine weiteren aktiven Plugins.
 - Pro Erweiterung festhalten, woher Daten kommen (CPT, Taxonomie, `meta_data` oder Plugin-API), ob sie im REST API sichtbar und beschreibbar sind und ob Beziehungen am Elternprodukt oder an Varianten haengen. REST-Sichtbarkeit allein gilt nicht als WooCommerce-Zuordnung.
 - Schnittstellen-, Fehler- und Bedrohungsmodell dokumentieren.
 
@@ -68,6 +69,9 @@ Eine eigenstaendige Netzwerk-/Team-Edition kann spaeter einen zentralen Synchron
 
 ### Phase 2: Produktverwaltung mit Varianten (erster funktionaler MVP)
 
+- Ausgewaehlte WooCommerce-Produktpayloads einschliesslich Germanized-Metadaten, externer ID, Typ und Eltern-ID dauerhaft und transaktional in SQLite speichern; den Shop selbst dabei nicht veraendern.
+- Den zuletzt importierten Shopkatalog nach Neustart wieder anzeigen und seitenweise aus SQLite laden. Rohdaten fuer noch nicht editierbare Produkttypen nicht verwerfen.
+- Beim Appstart nach der Anmeldung den zuletzt importierten Katalog ohne Netzwerkrequest aus SQLite laden; einfache Produkte in der bestehenden Arbeitsansicht wiederherstellen und weitere Typen als lokal vorhandene Rohdaten kenntlich machen.
 - Lokaler Katalog fuer einfache und variable Produkte sowie Varianten mit Elternbeziehung.
 - Variantenattribute (z. B. Groesse und Farbe), Attributwerte, SKU, Preis und Bestand pro Variante korrekt abbilden.
 - Zugeordnete Hersteller-/Markenreferenzen mit stabiler Shop-ID, Slug und Anzeigename erhalten. Herstellerdaten nicht aus Produktnamen erraten.
@@ -83,6 +87,8 @@ Eine eigenstaendige Netzwerk-/Team-Edition kann spaeter einen zentralen Synchron
 
 - Einen Integrationskatalog aus einer read-only REST-Entdeckung aufbauen: WordPress-Namespaces, REST-faehige CPTs, Taxonomien und WooCommerce-Produktrouten getrennt erfassen.
 - Den `edit`-Kontext zuerst versuchen und bei fehlender Berechtigung auf `view` zurueckfallen. Teilweise sichtbare Ergebnisse als solche markieren; nicht ueber die REST-API exponierte Typen nicht als vollstaendig entdeckt ausgeben.
+- Taxonomien sowohl aus `wp/v2/taxonomies` als auch aus der am `product`-Post-Type registrierten Taxonomieliste zusammenfuehren; fehlende Taxonomie-Indexeintraege als nicht im Index markieren.
+- WooCommerce-Kategorien, Schlagwoerter und globale Attribute zusaetzlich ueber die dedizierten `wc/v3/products/...`-Endpunkte pruefen.
 - WooCommerce-Kerntypen, Taxonomien mit Produktbezug und CPTs mit einer geteilten Produkttaxonomie technisch klassifizieren. Namen oder Slugs allein sind kein Beweis fuer eine WooCommerce-Beziehung.
 - Erweiterungs-Namespaces und moegliche Beziehungen als Vorschlaege anzeigen, die konkrete Zuordnung durch einen Administrator bestaetigen lassen. Unbekannte Typen bleiben lesend und werden niemals automatisch geschrieben.
 - Hersteller getrennt vom WooCommerce-Produkt modellieren: stabile externe ID, Post-Typ oder Taxonomie, Name, Slug, Status und explizite Produkt-/Variantenbeziehungen.

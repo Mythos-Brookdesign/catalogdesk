@@ -87,6 +87,51 @@ const saveProjectSchema = z
     'Revision required for updates',
   )
 const idSchema = z.string().uuid()
+const userIdSchema = z.string().uuid()
+const shopCatalogSchema = z
+  .object({
+    url: z
+      .string()
+      .trim()
+      .max(2048)
+      .url()
+      .refine((value) => {
+        const url = new URL(value)
+        return (
+          url.protocol === 'https:' &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash
+        )
+      }),
+    importedAt: z.string().datetime(),
+    actorId: userIdSchema,
+    actorUsername: z.string().min(3).max(32),
+    products: z
+      .array(
+        z
+          .object({
+            id: z.number().int().positive(),
+            parentId: z.number().int().positive().nullable(),
+            type: z.string().min(1).max(80),
+            sku: z.string().max(255),
+            name: z.string().max(1000),
+            payload: z.record(z.string(), z.unknown()),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50_000),
+  })
+  .strict()
+const shopCatalogPageSchema = z
+  .object({
+    url: shopCatalogSchema.shape.url,
+    page: z.number().int().min(0).max(1_000_000).default(0),
+    pageSize: z.number().int().min(1).max(100).default(50),
+  })
+  .strict()
 const databasePathSchema = z
   .string()
   .min(1)
@@ -152,7 +197,6 @@ const bootstrapAccountSchema = z
   .object({ ...accountFields, role: z.literal('admin') })
   .strict()
 const createAccountSchema = z.object(accountFields).strict()
-const userIdSchema = z.string().uuid()
 const transferActorSchema = z.object({ actorId: userIdSchema })
 
 function removeSqliteSidecars(filename) {
@@ -224,7 +268,7 @@ function openDatabase(filename) {
     )
     database.exec('BEGIN IMMEDIATE')
     const version = database.prepare('PRAGMA user_version').get().user_version
-    if (version > 5)
+    if (version > 6)
       throw new Error(
         'Diese Datenbank wurde mit einer neueren App-Version erstellt.',
       )
@@ -288,6 +332,28 @@ function openDatabase(filename) {
       ALTER TABLE transfer_events ADD COLUMN actor_username TEXT;
       PRAGMA user_version = 5;`)
     }
+    if (version < 6) {
+      database.exec(`CREATE TABLE shop_catalog_imports (
+        shop_url TEXT PRIMARY KEY,
+        imported_at TEXT NOT NULL,
+        imported_by_user_id TEXT NOT NULL REFERENCES app_users(id),
+        imported_by_username TEXT NOT NULL,
+        product_count INTEGER NOT NULL CHECK(product_count > 0)
+      ) STRICT;
+      CREATE TABLE shop_catalog_products (
+        shop_url TEXT NOT NULL REFERENCES shop_catalog_imports(shop_url) ON DELETE CASCADE,
+        product_id INTEGER NOT NULL CHECK(product_id > 0),
+        parent_id INTEGER CHECK(parent_id IS NULL OR parent_id > 0),
+        type TEXT NOT NULL,
+        sku TEXT NOT NULL,
+        name TEXT NOT NULL,
+        payload TEXT NOT NULL CHECK(json_valid(payload)),
+        PRIMARY KEY(shop_url, product_id)
+      ) STRICT;
+      CREATE INDEX shop_catalog_products_sku ON shop_catalog_products(shop_url, sku);
+      CREATE INDEX shop_catalog_products_parent ON shop_catalog_products(shop_url, parent_id);
+      PRAGMA user_version = 6;`)
+    }
     database.exec('COMMIT')
   } catch (error) {
     if (database.isTransaction) database.exec('ROLLBACK')
@@ -345,7 +411,152 @@ function openDatabase(filename) {
     return { ...row, items, events }
   }
 
+  function listShopCatalogProducts(payload) {
+    const parsed = shopCatalogPageSchema.parse(payload)
+    const offset = parsed.page * parsed.pageSize
+    const total = database
+      .prepare(
+        'SELECT COUNT(*) AS total FROM shop_catalog_products WHERE shop_url = ?',
+      )
+      .get(parsed.url).total
+    const products = database
+      .prepare(
+        'SELECT product_id AS id, parent_id AS parentId, type, sku, name, payload FROM shop_catalog_products WHERE shop_url = ? ORDER BY COALESCE(parent_id, product_id), parent_id IS NOT NULL, product_id LIMIT ? OFFSET ?',
+      )
+      .all(parsed.url, parsed.pageSize, offset)
+      .map((product) => ({ ...product, payload: JSON.parse(product.payload) }))
+    return { products, total, page: parsed.page, pageSize: parsed.pageSize }
+  }
+
   return {
+    replaceShopCatalog(payload) {
+      const parsed = shopCatalogSchema.parse(payload)
+      const productIds = new Set()
+      for (const product of parsed.products) {
+        if (productIds.has(product.id))
+          throw new Error('Der Shopkatalog enthaelt doppelte Produkt-IDs.')
+        productIds.add(product.id)
+      }
+      const serializedProducts = parsed.products.map((product) => ({
+        ...product,
+        payload: JSON.stringify(product.payload),
+      }))
+      if (
+        Buffer.byteLength(JSON.stringify(serializedProducts)) >
+        40 * 1024 * 1024
+      )
+        throw new Error('Der Shopkatalog ueberschreitet 40 MB.')
+
+      database.exec('BEGIN IMMEDIATE')
+      try {
+        database
+          .prepare('DELETE FROM shop_catalog_imports WHERE shop_url = ?')
+          .run(parsed.url)
+        database
+          .prepare(
+            'INSERT INTO shop_catalog_imports (shop_url, imported_at, imported_by_user_id, imported_by_username, product_count) VALUES (?, ?, ?, ?, ?)',
+          )
+          .run(
+            parsed.url,
+            parsed.importedAt,
+            parsed.actorId,
+            parsed.actorUsername,
+            parsed.products.length,
+          )
+        const insertProduct = database.prepare(
+          'INSERT INTO shop_catalog_products (shop_url, product_id, parent_id, type, sku, name, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        )
+        for (const product of serializedProducts)
+          insertProduct.run(
+            parsed.url,
+            product.id,
+            product.parentId,
+            product.type,
+            product.sku,
+            product.name,
+            product.payload,
+          )
+        database.exec('COMMIT')
+      } catch (error) {
+        if (database.isTransaction) database.exec('ROLLBACK')
+        throw error
+      }
+      return {
+        shopUrl: parsed.url,
+        importedAt: parsed.importedAt,
+        productCount: parsed.products.length,
+        importedBy: parsed.actorUsername,
+      }
+    },
+    shopCatalogInfo(url) {
+      const shopUrl = shopCatalogSchema.shape.url.parse(url)
+      const row = database
+        .prepare(
+          'SELECT shop_url AS shopUrl, imported_at AS importedAt, imported_by_username AS importedBy, product_count AS productCount FROM shop_catalog_imports WHERE shop_url = ?',
+        )
+        .get(shopUrl)
+      return row ?? null
+    },
+    loadLatestShopCatalog() {
+      const catalog = database
+        .prepare(
+          'SELECT shop_url AS url, imported_at AS importedAt, imported_by_username AS importedBy, product_count AS total FROM shop_catalog_imports ORDER BY imported_at DESC, shop_url LIMIT 1',
+        )
+        .get()
+      if (!catalog) return null
+
+      const simpleProducts = database
+        .prepare(
+          "SELECT payload FROM shop_catalog_products WHERE shop_url = ? AND type = 'simple' ORDER BY product_id",
+        )
+        .all(catalog.url)
+        .map((row) => JSON.parse(row.payload))
+      const skipped = database
+        .prepare(
+          "SELECT type, COUNT(*) AS count FROM shop_catalog_products WHERE shop_url = ? AND type != 'simple' GROUP BY type ORDER BY type",
+        )
+        .all(catalog.url)
+        .map((row) => ({ type: row.type, count: row.count }))
+      const categories = (product) =>
+        (Array.isArray(product.categories) ? product.categories : [])
+          .map((category) =>
+            typeof category?.name === 'string'
+              ? category.name.replaceAll(',', '\\,')
+              : '',
+          )
+          .filter(Boolean)
+          .join(', ')
+
+      return {
+        ...catalog,
+        imported: simpleProducts.length,
+        skipped,
+        dataset: simpleProducts.length
+          ? {
+              headers: [
+                'SKU',
+                'Name',
+                'Regular price',
+                'Stock',
+                'Categories',
+                'Description',
+              ],
+              rows: simpleProducts.map((product) => [
+                product.sku ?? '',
+                product.name ?? '',
+                product.regular_price ?? '',
+                product.manage_stock && product.stock_quantity !== null
+                  ? String(product.stock_quantity)
+                  : '',
+                categories(product),
+                product.description ?? '',
+              ]),
+              delimiter: ',',
+            }
+          : null,
+      }
+    },
+    listShopCatalogProducts,
     startTransfer(payload) {
       const parsed = z
         .object({
@@ -689,7 +900,7 @@ function openDatabase(filename) {
         )
       return true
     },
-    info: () => ({ path: filename, schemaVersion: 5 }),
+    info: () => ({ path: filename, schemaVersion: 6 }),
     close: () => database.close(),
   }
 }

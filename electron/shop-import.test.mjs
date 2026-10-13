@@ -51,8 +51,16 @@ describe('WooCommerce product import', () => {
       ok: true,
       imported: 101,
       total: 102,
+      catalogProducts: expect.arrayContaining([
+        expect.objectContaining({
+          id: 2,
+          type: 'variable',
+          parentId: null,
+        }),
+      ]),
       skipped: [{ type: 'variable', count: 1 }],
     })
+    expect(result.catalogProducts).toHaveLength(102)
     expect(result.dataset.rows[0]).toEqual([
       'NL-1',
       'Notebook',

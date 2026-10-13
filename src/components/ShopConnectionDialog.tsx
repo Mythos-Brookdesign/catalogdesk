@@ -17,6 +17,7 @@ import type {
   ImportedShop,
   ShopConnectionResult,
   ShopImportProgress,
+  ShopCatalogInfo,
   ShopRestDiscovery,
 } from '../types/desktop'
 
@@ -38,6 +39,19 @@ const relationLabels = {
   'shares-product-taxonomy': 'Teilt Produkttaxonomie',
   unclassified: 'Nicht zugeordnet',
 } as const
+
+const commerceResourceLabels = {
+  categories: 'Produktkategorien',
+  tags: 'Produktschlagwoerter',
+  attributes: 'Globale Attribute',
+} as const
+
+function discoveryStatusClass(status: keyof typeof discoveryStatusLabels) {
+  if (status === 'available') return 'success'
+  if (status === 'partial') return 'neutral'
+  if (status === 'denied' || status === 'http-error') return 'error'
+  return 'muted'
+}
 
 export function ShopConnectionDialog({
   checked,
@@ -64,6 +78,7 @@ export function ShopConnectionDialog({
   const [action, setAction] = useState<'test' | 'import'>('import')
   const [progress, setProgress] = useState<ShopImportProgress | null>(null)
   const [storedUrl, setStoredUrl] = useState<string | null>(null)
+  const [localCatalog, setLocalCatalog] = useState<ShopCatalogInfo | null>(null)
   const [loading, setLoading] = useState(Boolean(desktop))
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
@@ -84,11 +99,15 @@ export function ShopConnectionDialog({
     let canceled = false
     desktop
       .savedShopConnection()
-      .then((result) => {
+      .then(async (result) => {
         if (canceled) return
         if (result.ok) {
           setStoredUrl(result.value?.url ?? null)
-          if (result.value) setUrl(result.value.url)
+          if (result.value) {
+            setUrl(result.value.url)
+            const localResult = await desktop.shopCatalogInfo(result.value.url)
+            if (!canceled && localResult.ok) setLocalCatalog(localResult.value)
+          }
         } else setError(result.error)
         setLoading(false)
       })
@@ -463,6 +482,14 @@ export function ShopConnectionDialog({
           )}
         </div>
       )}
+      {localCatalog && (
+        <p className="shop-catalog-info" role="status">
+          {localCatalog.productCount.toLocaleString('de-DE')} Produktdatensaetze
+          lokal gespeichert &middot; zuletzt importiert am{' '}
+          {new Date(localCatalog.importedAt).toLocaleString('de-DE')} durch{' '}
+          {localCatalog.importedBy}
+        </p>
+      )}
       {confirmDelete && (
         <div className="project-delete">
           <p>Gespeicherte Shopverbindung dauerhaft loeschen?</p>
@@ -559,7 +586,7 @@ export function ShopConnectionDialog({
             </span>
           </div>
           <h4>Post Types</h4>
-          {discovery.postTypesStatus !== 'available' ? (
+          {!['available', 'partial'].includes(discovery.postTypesStatus) ? (
             <p className="rest-discovery-empty">
               Post Types konnten nicht gelesen werden. Der API-Nutzer benoetigt
               passende WordPress-Rechte und der Endpunkt muss REST-faehig sein.
@@ -585,8 +612,14 @@ export function ShopConnectionDialog({
               Keine REST-faehigen Post Types gefunden.
             </p>
           )}
+          {discovery.postTypesStatus === 'partial' && (
+            <p className="rest-discovery-empty">
+              Es werden nur im oeffentlichen Kontext sichtbare Post Types
+              angezeigt.
+            </p>
+          )}
           <h4>Taxonomien</h4>
-          {discovery.taxonomiesStatus === 'available' &&
+          {['available', 'partial'].includes(discovery.taxonomiesStatus) &&
           discovery.taxonomies.length ? (
             <ul className="rest-discovery-list">
               {discovery.taxonomies.map((taxonomy) => (
@@ -596,10 +629,12 @@ export function ShopConnectionDialog({
                     <code>{taxonomy.slug}</code>
                   </span>
                   <span
-                    className={`status ${taxonomy.attachedToProducts ? 'success' : 'muted'}`}
+                    className={`status ${taxonomy.attachedToProducts ? (taxonomy.restIndexed ? 'success' : 'neutral') : 'muted'}`}
                   >
                     {taxonomy.attachedToProducts
-                      ? 'Mit Produkt verknuepft'
+                      ? taxonomy.restIndexed
+                        ? 'Mit Produkt verknuepft'
+                        : 'Produktbezug · nicht im Index'
                       : 'Kein Produktbezug erkannt'}
                   </span>
                 </li>
@@ -607,10 +642,50 @@ export function ShopConnectionDialog({
             </ul>
           ) : (
             <p className="rest-discovery-empty">
-              {discovery.taxonomiesStatus === 'available'
+              {['available', 'partial'].includes(discovery.taxonomiesStatus)
                 ? 'Keine REST-faehigen Taxonomien gefunden.'
                 : `Taxonomien: ${discoveryStatusLabels[discovery.taxonomiesStatus]}.`}
             </p>
+          )}
+          {discovery.taxonomiesStatus === 'partial' && (
+            <p className="rest-discovery-empty">
+              Es werden nur im oeffentlichen Kontext sichtbare Taxonomien
+              angezeigt.
+            </p>
+          )}
+          <h4>WooCommerce-Katalogbereiche</h4>
+          <ul className="rest-discovery-list">
+            {(
+              Object.entries(commerceResourceLabels) as [
+                keyof typeof commerceResourceLabels,
+                string,
+              ][]
+            ).map(([resource, label]) => (
+              <li key={resource}>
+                <span>
+                  <strong>{label}</strong>
+                  <code>/wc/v3/products/{resource}</code>
+                </span>
+                <span
+                  className={`status ${discoveryStatusClass(discovery.commerceResources[resource])}`}
+                >
+                  {discoveryStatusLabels[discovery.commerceResources[resource]]}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {discovery.productAttributes.length > 0 && (
+            <ul className="rest-discovery-list">
+              {discovery.productAttributes.map((attribute) => (
+                <li key={attribute.id}>
+                  <span>
+                    <strong>{attribute.name}</strong>
+                    <code>{attribute.slug}</code>
+                  </span>
+                  <span className="status neutral">{attribute.type}</span>
+                </li>
+              ))}
+            </ul>
           )}
           <h4>REST-Namespaces</h4>
           <p className="rest-discovery-namespaces">
