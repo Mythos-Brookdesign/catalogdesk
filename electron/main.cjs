@@ -15,6 +15,7 @@ const { pathToFileURL } = require('node:url')
 const { assetPath, saveSchema, trustedSender } = require('./security.cjs')
 const { testConnection } = require('./shop.cjs')
 const { importShopProducts } = require('./shop-import.cjs')
+const { discoverShopRest } = require('./shop-discovery.cjs')
 const { createDatabaseClient } = require('./database-client.cjs')
 const { createShopStore } = require('./shop-store.cjs')
 const { createAuthenticator } = require('./auth.cjs')
@@ -555,6 +556,30 @@ app.whenReady().then(async () => {
       )
     } catch (error) {
       return { ok: false, error: error.message }
+    } finally {
+      connectionTestRunning = false
+    }
+  })
+  ipcMain.handle('catalog:discover-shop-rest', async (event, envelope) => {
+    try {
+      authorize(event, envelope, 'shop:read')
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
+    if (connectionTestRunning || shopImportController || transferBusy())
+      return { ok: false, error: 'Eine Shopanfrage laeuft bereits.' }
+    connectionTestRunning = true
+    try {
+      const connection = await shopCredentials(envelope.payload)
+      return await discoverShopRest(connection, (url, options) =>
+        net.fetch(url, options),
+      )
+    } catch {
+      return {
+        ok: false,
+        error:
+          'REST-API konnte nicht untersucht werden. Shopverbindung pruefen.',
+      }
     } finally {
       connectionTestRunning = false
     }

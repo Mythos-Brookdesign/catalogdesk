@@ -660,6 +660,103 @@ test('creates and restores an admin database backup and expires sessions', async
   }
 })
 
+test('discovers WordPress post types and WooCommerce taxonomies without saving keys', async ({
+  playwright,
+}) => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), 'catalogdesk-discovery-'),
+  )
+  const application = await launchAuthenticatedElectron(playwright, {
+    args: ['.'],
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '',
+      CATALOGDESK_TEST_USER_DATA: directory,
+    },
+  })
+  try {
+    const page = await application.firstWindow()
+    const key = 'ck_' + 'e'.repeat(40)
+    const secret = 'cs_' + 'f'.repeat(40)
+    await application.evaluate(({ net }) => {
+      net.fetch = async (input, options) => {
+        const url = new URL(String(input))
+        if (options?.method !== 'GET' || options.redirect !== 'error')
+          throw new Error('Unexpected discovery request')
+        if (url.pathname.endsWith('/wp-json/'))
+          return new Response(
+            JSON.stringify({ namespaces: ['wp/v2', 'wc/v3', 'maker/v1'] }),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        if (url.pathname.endsWith('/wp/v2/types'))
+          return new Response(
+            JSON.stringify({
+              product: {
+                name: 'Products',
+                rest_base: 'products',
+                rest_namespace: 'wc/v3',
+                public: true,
+                taxonomies: ['product_brand'],
+              },
+              manufacturer: {
+                name: 'Manufacturers',
+                rest_base: 'manufacturer',
+                rest_namespace: 'wp/v2',
+                public: true,
+                taxonomies: ['product_brand'],
+              },
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        if (url.pathname.endsWith('/wp/v2/taxonomies'))
+          return new Response(
+            JSON.stringify({
+              product_brand: {
+                name: 'Brands',
+                rest_base: 'product_brand',
+                rest_namespace: 'wp/v2',
+                types: ['product'],
+              },
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        if (url.pathname.endsWith('/wc/v3/products'))
+          return new Response(
+            JSON.stringify([
+              { id: 41, type: 'variable', attributes: [], categories: [] },
+            ]),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        throw new Error('Unexpected REST route')
+      }
+    })
+    await page
+      .getByRole('button', { name: 'Shopverbindung', exact: true })
+      .click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Consumer Key', { exact: true }).fill(key)
+    await dialog.getByLabel('Consumer Secret', { exact: true }).fill(secret)
+    await dialog.getByRole('button', { name: 'REST-Inhalte entdecken' }).click()
+    const result = dialog.getByRole('region', { name: 'REST-API-Entdeckung' })
+    await expect(result).toContainText('Manufacturers')
+    await expect(result).toContainText('Teilt Produkttaxonomie')
+    await expect(result).toContainText('Mit Produkt verknuepft')
+    await expect(result).toContainText('maker/v1')
+    await expect(result).toContainText('variable')
+    expect(
+      JSON.stringify(
+        await page.evaluate(() => window.catalogDesktop!.savedShopConnection()),
+      ),
+    ).not.toContain(secret)
+    expect(
+      await page.evaluate(() => window.catalogDesktop!.savedShopConnection()),
+    ).toMatchObject({ ok: true, value: null })
+  } finally {
+    await application.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test('checks a read-only shop connection through native IPC and keeps keys out of the renderer', async ({
   playwright,
 }, testInfo) => {

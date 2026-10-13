@@ -84,6 +84,12 @@ test('bootstraps an administrator, manages a reader and enforces role restrictio
       error: expect.stringContaining('Benutzerrolle'),
     })
     expect(
+      await page.evaluate(() => window.catalogDesktop!.discoverShopRest(null)),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Benutzerrolle'),
+    })
+    expect(
       await page.evaluate(() =>
         window.catalogDesktop!.setUserActive({
           id: '00000000-0000-4000-8000-000000000000',

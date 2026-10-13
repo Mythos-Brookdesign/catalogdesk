@@ -114,6 +114,43 @@ export type ImportedShop = {
   storageError?: string
 }
 export type ShopImportResult = ImportedShop | { ok: false; error: string }
+export type DiscoveryStatus =
+  | 'available'
+  | 'partial'
+  | 'denied'
+  | 'unavailable'
+  | 'invalid-response'
+  | 'http-error'
+  | 'timeout'
+  | 'unreachable'
+export type ShopRestDiscovery = {
+  ok: true
+  url: string
+  checkedAt: string
+  namespaces: string[]
+  indexStatus: DiscoveryStatus
+  postTypes: {
+    slug: string
+    name: string
+    restBase: string | null
+    restNamespace: string | null
+    public: boolean
+    taxonomies: string[]
+    relation: 'woocommerce-core' | 'shares-product-taxonomy' | 'unclassified'
+  }[]
+  postTypesStatus: DiscoveryStatus
+  taxonomies: {
+    slug: string
+    name: string
+    restBase: string | null
+    restNamespace: string | null
+    types: string[]
+    attachedToProducts: boolean
+  }[]
+  taxonomiesStatus: DiscoveryStatus
+  productApiStatus: DiscoveryStatus
+  productTypes: string[]
+}
 
 export type ProjectSnapshot = {
   filename: string
@@ -209,6 +246,9 @@ declare global {
       testShopConnection: (
         payload: ShopConnection | null,
       ) => Promise<ShopConnectionResult>
+      discoverShopRest: (
+        payload: ShopConnection | null,
+      ) => Promise<ShopRestDiscovery | { ok: false; error: string }>
       openCsv: () => Promise<{ name: string; content: string } | null>
       saveCsv: (payload: {
         filename: string

@@ -58,6 +58,8 @@ contextBridge.exposeInMainWorld('catalogDesktop', {
   openCsv: () => authorized('catalog:open-csv'),
   saveCsv: (payload) => authorized('catalog:save-csv', payload),
   testShopConnection: (payload) => authorized('catalog:test-shop', payload),
+  discoverShopRest: (payload) =>
+    authorized('catalog:discover-shop-rest', payload),
   importShopProducts: (payload) => authorized('catalog:import-shop', payload),
   cancelShopImport: () => authorized('catalog:cancel-shop-import'),
   onShopImportProgress: (callback) => {

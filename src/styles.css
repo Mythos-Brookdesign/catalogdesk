@@ -414,6 +414,95 @@
 .shop-result time {
   color: #627369;
 }
+.rest-discovery {
+  display: grid;
+  gap: 11px;
+  margin-top: 18px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.rest-discovery-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.rest-discovery-heading h3,
+.rest-discovery h4 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.rest-discovery-heading > div {
+  min-width: 0;
+}
+.rest-discovery-heading span,
+.rest-discovery-heading time {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.rest-discovery-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 9px 0;
+  border-block: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+.rest-discovery h4 {
+  font-size: 12px;
+}
+.rest-discovery-list {
+  display: grid;
+  gap: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: -5px 0 2px;
+  padding: 0;
+  list-style: none;
+}
+.rest-discovery-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.rest-discovery-list li > span:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.rest-discovery-list strong,
+.rest-discovery-list code {
+  overflow-wrap: anywhere;
+}
+.rest-discovery-list code,
+.rest-discovery-namespaces {
+  color: var(--muted);
+  font-size: 10px;
+}
+.rest-discovery-namespaces {
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.rest-discovery-empty,
+.rest-discovery-note {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.rest-discovery-note {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
 .shop-footer {
   display: flex;
   justify-content: space-between;
@@ -427,6 +516,10 @@
   font-weight: 500;
 }
 @media (max-width: 600px) {
+  .rest-discovery-list li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .topbar-actions {
     gap: 8px;
   }

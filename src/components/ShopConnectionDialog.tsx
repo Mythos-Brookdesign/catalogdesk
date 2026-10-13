@@ -6,6 +6,7 @@ import {
   EyeOff,
   Download,
   LoaderCircle,
+  ScanSearch,
   PlugZap,
   ShieldCheck,
   Save,
@@ -16,9 +17,27 @@ import type {
   ImportedShop,
   ShopConnectionResult,
   ShopImportProgress,
+  ShopRestDiscovery,
 } from '../types/desktop'
 
 export type CheckedShop = Extract<ShopConnectionResult, { ok: true }>
+
+const discoveryStatusLabels = {
+  available: 'Verfuegbar',
+  partial: 'Teilweise verfuegbar',
+  denied: 'Zugriff verweigert',
+  unavailable: 'Nicht vorhanden',
+  'invalid-response': 'Ungueltige Antwort',
+  'http-error': 'HTTP-Fehler',
+  timeout: 'Zeitlimit',
+  unreachable: 'Nicht erreichbar',
+} as const
+
+const relationLabels = {
+  'woocommerce-core': 'WooCommerce-Kerntyp',
+  'shares-product-taxonomy': 'Teilt Produkttaxonomie',
+  unclassified: 'Nicht zugeordnet',
+} as const
 
 export function ShopConnectionDialog({
   checked,
@@ -40,6 +59,8 @@ export function ShopConnectionDialog({
   const [visible, setVisible] = useState(false)
   const [testing, setTesting] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [discovering, setDiscovering] = useState(false)
+  const [discovery, setDiscovery] = useState<ShopRestDiscovery | null>(null)
   const [action, setAction] = useState<'test' | 'import'>('import')
   const [progress, setProgress] = useState<ShopImportProgress | null>(null)
   const [storedUrl, setStoredUrl] = useState<string | null>(null)
@@ -50,7 +71,7 @@ export function ShopConnectionDialog({
   const reuseStored = Boolean(
     storedUrl && url === storedUrl && !consumerKey && !consumerSecret,
   )
-  const busy = testing || importing || loading || saving
+  const busy = testing || importing || discovering || loading || saving
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -183,6 +204,7 @@ export function ShopConnectionDialog({
   function resetResult() {
     setError('')
     setNotice('')
+    setDiscovery(null)
     onChecked(null)
   }
 
@@ -224,6 +246,30 @@ export function ShopConnectionDialog({
       )
     } finally {
       setTesting(false)
+    }
+  }
+
+  async function discover() {
+    if (!desktop || busy) return
+    setDiscovering(true)
+    setError('')
+    setDiscovery(null)
+    try {
+      const result = await desktop.discoverShopRest(
+        reuseStored
+          ? null
+          : {
+              url: url.trim(),
+              consumerKey: consumerKey.trim(),
+              consumerSecret: consumerSecret.trim(),
+            },
+      )
+      if (result.ok) setDiscovery(result)
+      else setError(result.error)
+    } catch {
+      setError('REST-API konnte nicht untersucht werden.')
+    } finally {
+      setDiscovering(false)
     }
   }
 
@@ -341,6 +387,25 @@ export function ShopConnectionDialog({
                 {testing
                   ? 'Verbindung wird geprueft ...'
                   : 'Verbindung pruefen'}
+              </button>
+              <button
+                className="button"
+                type="button"
+                disabled={
+                  (!reuseStored && (!consumerKey || !consumerSecret)) ||
+                  !url ||
+                  busy
+                }
+                onClick={() => void discover()}
+              >
+                {discovering ? (
+                  <LoaderCircle className="spin" size={17} />
+                ) : (
+                  <ScanSearch size={17} />
+                )}
+                {discovering
+                  ? 'REST-API wird untersucht ...'
+                  : 'REST-Inhalte entdecken'}
               </button>
               <button
                 className="button primary"
@@ -469,6 +534,100 @@ export function ShopConnectionDialog({
             </time>
           </div>
         </div>
+      )}
+      {discovery && (
+        <section className="rest-discovery" aria-label="REST-API-Entdeckung">
+          <div className="rest-discovery-heading">
+            <div>
+              <h3>Erkannte REST-Inhalte</h3>
+              <span>{discovery.url}</span>
+            </div>
+            <time dateTime={discovery.checkedAt}>
+              {new Date(discovery.checkedAt).toLocaleString('de-DE')}
+            </time>
+          </div>
+          <div className="rest-discovery-status">
+            <span>
+              Produkt-API: {discoveryStatusLabels[discovery.productApiStatus]}
+            </span>
+            <span>
+              WordPress-Typen:{' '}
+              {discoveryStatusLabels[discovery.postTypesStatus]}
+            </span>
+            <span>
+              Taxonomien: {discoveryStatusLabels[discovery.taxonomiesStatus]}
+            </span>
+          </div>
+          <h4>Post Types</h4>
+          {discovery.postTypesStatus !== 'available' ? (
+            <p className="rest-discovery-empty">
+              Post Types konnten nicht gelesen werden. Der API-Nutzer benoetigt
+              passende WordPress-Rechte und der Endpunkt muss REST-faehig sein.
+            </p>
+          ) : discovery.postTypes.length ? (
+            <ul className="rest-discovery-list">
+              {discovery.postTypes.map((type) => (
+                <li key={type.slug}>
+                  <span>
+                    <strong>{type.name}</strong>
+                    <code>{type.slug}</code>
+                  </span>
+                  <span
+                    className={`status ${type.relation === 'woocommerce-core' ? 'success' : type.relation === 'shares-product-taxonomy' ? 'neutral' : 'muted'}`}
+                  >
+                    {relationLabels[type.relation]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="rest-discovery-empty">
+              Keine REST-faehigen Post Types gefunden.
+            </p>
+          )}
+          <h4>Taxonomien</h4>
+          {discovery.taxonomiesStatus === 'available' &&
+          discovery.taxonomies.length ? (
+            <ul className="rest-discovery-list">
+              {discovery.taxonomies.map((taxonomy) => (
+                <li key={taxonomy.slug}>
+                  <span>
+                    <strong>{taxonomy.name}</strong>
+                    <code>{taxonomy.slug}</code>
+                  </span>
+                  <span
+                    className={`status ${taxonomy.attachedToProducts ? 'success' : 'muted'}`}
+                  >
+                    {taxonomy.attachedToProducts
+                      ? 'Mit Produkt verknuepft'
+                      : 'Kein Produktbezug erkannt'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="rest-discovery-empty">
+              {discovery.taxonomiesStatus === 'available'
+                ? 'Keine REST-faehigen Taxonomien gefunden.'
+                : `Taxonomien: ${discoveryStatusLabels[discovery.taxonomiesStatus]}.`}
+            </p>
+          )}
+          <h4>REST-Namespaces</h4>
+          <p className="rest-discovery-namespaces">
+            {discovery.namespaces.length
+              ? discovery.namespaces.join(' · ')
+              : `API-Index: ${discoveryStatusLabels[discovery.indexStatus]}.`}
+          </p>
+          {discovery.productTypes.length > 0 && (
+            <p className="rest-discovery-empty">
+              Produktbeispiele: {discovery.productTypes.join(', ')}
+            </p>
+          )}
+          <p className="rest-discovery-note">
+            Erkannt wird nur eine technische Beziehung. Nicht zugeordnete Typen
+            werden nicht automatisch bearbeitet.
+          </p>
+        </section>
       )}
       <div className="shop-footer">
         <span className="muted-text">Schl&uuml;sselspeicherung</span>

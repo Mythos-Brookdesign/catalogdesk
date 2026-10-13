@@ -49,8 +49,8 @@ Eine eigenstaendige Netzwerk-/Team-Edition kann spaeter einen zentralen Synchron
 - Zielszenarien mit Shopbetreibern und Agenturen erfassen: Kataloggroesse, Varianten, haeufige Aenderungen, Nutzerrollen und Hosting-Engpaesse.
 - Lokales Mehrbenutzermodell, Datenzugriff, Sicherheitsgrenzen und Datenaufbewahrung festlegen.
 - WooCommerce-Datenmodell fuer einfache Produkte und Varianten sowie Konflikt- und Synchronisationsregeln spezifizieren.
-- Aktiven Shop auf Plugins, registrierte Custom Post Types (CPTs), Taxonomien, REST-Routen, editierbare Metafelder und Beziehungen zu Produkten/Varianten untersuchen. Fuer den bestehenden Shop insbesondere den Hersteller-CPT und sein konkretes Plugin dokumentieren.
-- Pro Erweiterung festhalten, woher Daten kommen (CPT, Taxonomie, `meta_data` oder Plugin-API), ob sie im REST API sichtbar und beschreibbar sind und ob Beziehungen am Elternprodukt oder an Varianten haengen.
+- Aktiven Shop mit einer read-only REST-Entdeckung untersuchen: sichtbare CPTs, Taxonomien, Namespaces und WooCommerce-Produktrouten dynamisch auflisten.
+- Pro Erweiterung festhalten, woher Daten kommen (CPT, Taxonomie, `meta_data` oder Plugin-API), ob sie im REST API sichtbar und beschreibbar sind und ob Beziehungen am Elternprodukt oder an Varianten haengen. REST-Sichtbarkeit allein gilt nicht als WooCommerce-Zuordnung.
 - Schnittstellen-, Fehler- und Bedrohungsmodell dokumentieren.
 
 **Ergebnis:** Abgenommener Scope, Rollenmatrix, Datenmodell, Sicherheitsanforderungen und messbare Akzeptanzkriterien.
@@ -81,13 +81,16 @@ Eine eigenstaendige Netzwerk-/Team-Edition kann spaeter einen zentralen Synchron
 
 ### Phase 2a: CPTs und Shop-Erweiterungen
 
-- Einen Integrationskatalog fuer die tatsaechlich eingesetzten Shop-Erweiterungen einfuehren. Der erste Adapter wird nach der Bestandsaufnahme fuer den Hersteller-CPT beziehungsweise die Hersteller-/Markenloesung des Zielshops ausgewaehlt.
+- Einen Integrationskatalog aus einer read-only REST-Entdeckung aufbauen: WordPress-Namespaces, REST-faehige CPTs, Taxonomien und WooCommerce-Produktrouten getrennt erfassen.
+- Den `edit`-Kontext zuerst versuchen und bei fehlender Berechtigung auf `view` zurueckfallen. Teilweise sichtbare Ergebnisse als solche markieren; nicht ueber die REST-API exponierte Typen nicht als vollstaendig entdeckt ausgeben.
+- WooCommerce-Kerntypen, Taxonomien mit Produktbezug und CPTs mit einer geteilten Produkttaxonomie technisch klassifizieren. Namen oder Slugs allein sind kein Beweis fuer eine WooCommerce-Beziehung.
+- Erweiterungs-Namespaces und moegliche Beziehungen als Vorschlaege anzeigen, die konkrete Zuordnung durch einen Administrator bestaetigen lassen. Unbekannte Typen bleiben lesend und werden niemals automatisch geschrieben.
 - Hersteller getrennt vom WooCommerce-Produkt modellieren: stabile externe ID, Post-Typ oder Taxonomie, Name, Slug, Status und explizite Produkt-/Variantenbeziehungen.
 - Hersteller in Produktdetail, Suche und Filtern anzeigen. Zunaechst bestehende Hersteller lesen und Produktzuordnungen bearbeiten, sofern die konkrete REST-Schnittstelle dies sicher erlaubt.
 - Eigene CPT-Daten nur dann schreiben, wenn Route, Berechtigung und Feldvertrag ausdruecklich bekannt und getestet sind. Fremde Metafelder unveraendert durchreichen oder klar als nicht unterstuetzt ausweisen; niemals unbekannte Plugin-Daten beim Speichern entfernen.
 - Adapter-Vertrag und Test-Fixtures pro unterstuetztem CPT/Plugin versionieren; bei deaktiviertem Plugin, fehlender REST-Freigabe oder geaendertem Schema Schreibzugriff fuer den Adapter blockieren.
 
-**Abnahmekriterien:** Hersteller bleibt beim Produkt- und Variantenabgleich eindeutig verknuepft; fehlende, geloeschte oder doppelte Hersteller werden als Konflikt ausgewiesen. Ein unbekanntes Plugin-Feld wird nicht stillschweigend ueberschrieben oder geloescht. Unterstuetzung gilt pro dokumentiertem Plugin/Schema, nicht pauschal fuer beliebige CPTs.
+**Abnahmekriterien:** Die Entdeckung trennt verfuegbare, teilweise verfuegbare und nicht verfuegbare Endpunkte; eine bestaetigte Herstellerbeziehung bleibt beim Produkt- und Variantenabgleich eindeutig verknuepft. Fehlende, geloeschte oder doppelte Hersteller werden als Konflikt ausgewiesen. Ein unbekanntes Plugin-Feld wird nicht stillschweigend ueberschrieben oder geloescht. Unterstuetzung gilt pro bestaetigtem Adapter/Schema, nicht pauschal fuer beliebige CPTs.
 
 ### Phase 3: Bestellungen
 
@@ -110,9 +113,9 @@ Eine eigenstaendige Netzwerk-/Team-Edition kann spaeter einen zentralen Synchron
 
 ### Integrationsstrategie fuer CPTs und Plugins
 
-WordPress-CPTs sind nicht automatisch Bestandteil des WooCommerce-Produktendpunkts. Je nach Plugin liegen Hersteller als CPT, Taxonomie, Produkt-Metafeld oder Plugin-eigene Beziehung vor. Die WordPress REST API exponiert einen CPT nur, wenn er passend fuer `show_in_rest` registriert ist; Schreibrechte und Feldschema koennen zusaetzlich plugin- und benutzerabhaengig sein. Deshalb vor der Hersteller-Implementierung am konkreten Shop Post-Type, Taxonomie, `rest_base`, Feld-/Meta-Registrierung, Verknuepfung zu variablem Elternprodukt/Variante und benoetigte API-Rechte ermitteln.
+WordPress-CPTs sind nicht automatisch Bestandteil des WooCommerce-Produktendpunkts. Je nach Plugin liegen Hersteller als CPT, Taxonomie, Produkt-Metafeld oder Plugin-eigene Beziehung vor. Die WordPress REST API exponiert einen CPT nur, wenn er passend fuer `show_in_rest` registriert und fuer den aktuellen Kontext zugaenglich ist. Schreibrechte und Feldschema koennen zusaetzlich plugin- und benutzerabhaengig sein. CatalogDesk untersucht daher zuerst den REST-Index, `wp/v2/types`, `wp/v2/taxonomies` und einen minimalen WooCommerce-Produktsample. `edit` wird vor `view` versucht; ein Fallback wird als teilweise Sichtbarkeit markiert.
 
-CatalogDesk erhaelt dafuer eine Adaptergrenze: WooCommerce-Core-Daten und Erweiterungsdaten bleiben unterscheidbar, externe IDs und Herkunft werden mitgespeichert, und jeder Adapter deklariert lesbare/beschreibbare Felder. Der erste Hersteller-Adapter ist ein bewusst begrenzter Referenzadapter fuer das tatsaechlich verwendete Plugin. Neue Adapter koennen danach separat folgen. Eine generische automatische CPT-Schreibfunktion ist ausdruecklich kein MVP-Ziel.
+Technische Hinweise wie `product` als Core-Typ oder eine Taxonomie, die an `product` gebunden ist, sind Klassifikationen, keine semantischen Beweise. Ein CPT, der eine Produkttaxonomie teilt, wird als moeglicher Zusammenhang angezeigt; Administratoren bestaetigen die Beziehung. WooCommerce-Core-Daten und Erweiterungsdaten bleiben unterscheidbar, externe IDs und Herkunft werden mitgespeichert, und jeder spaetere Adapter deklariert lesbare/beschreibbare Felder. Eine generische automatische CPT-Schreibfunktion ist ausdruecklich kein MVP-Ziel.
 
 ## Messbare Produktziele
 
