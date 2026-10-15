@@ -102,6 +102,16 @@ export type ShopImportProgress = {
   page: number
   pages: number
 }
+export type ProductTaxonomyTerm = {
+  id: number | null
+  name: string
+  slug: string | null
+}
+export type ProductTaxonomies = {
+  categories: ProductTaxonomyTerm[]
+  tags: ProductTaxonomyTerm[]
+  brands: ProductTaxonomyTerm[]
+}
 export type ImportedShop = {
   ok: true
   url: string
@@ -110,6 +120,8 @@ export type ImportedShop = {
   imported: number
   total: number
   skipped: { type: string; count: number }[]
+  simpleProductIds: number[]
+  simpleProductTaxonomies: ProductTaxonomies[]
   importedAt: string
   credentialsSaved: boolean
   storageError?: string
@@ -128,6 +140,8 @@ export type StoredShopCatalog = {
   total: number
   imported: number
   skipped: { type: string; count: number }[]
+  simpleProductIds: number[]
+  simpleProductTaxonomies: ProductTaxonomies[]
   dataset: import('../domain/catalog').Dataset | null
 }
 export type StoredShopProduct = {
@@ -270,6 +284,11 @@ declare global {
           pageSize: number
         }>
       >
+      saveShopProductTaxonomies: (payload: {
+        url: string
+        productId: number
+        taxonomies: ProductTaxonomies
+      }) => Promise<DatabaseResult<{ updatedAt: string; updatedBy: string }>>
       saveShopConnection: (
         payload: ShopConnection,
       ) => Promise<DatabaseResult<{ url: string }>>

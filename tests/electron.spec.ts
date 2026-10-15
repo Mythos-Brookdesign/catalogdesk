@@ -248,6 +248,8 @@ test('imports all WooCommerce pages with decimal prices and saves the catalog in
               manage_stock: true,
               stock_quantity: 4,
               categories: [{ id: 1, name: 'Papeterie' }],
+              tags: [{ id: 4, name: 'Neu', slug: 'neu' }],
+              brands: [{ id: 8, name: 'Katalogwerk', slug: 'katalogwerk' }],
             }
           },
         )
@@ -345,6 +347,36 @@ test('imports all WooCommerce pages with decimal prices and saves the catalog in
     await expect(page.locator('.product-table tbody tr').first()).toContainText(
       'SHOP-1',
     )
+    await page.getByRole('button', { name: 'Datensatz 1 bearbeiten' }).click()
+    await expect(page.locator('.taxonomy-editor')).toBeVisible()
+    await page.getByLabel('Marken').fill('Katalogwerk\nNeue Marke')
+    await page.getByLabel('Schlagwoerter').fill('Neu\nSommer')
+    await expect(
+      page.getByRole('button', { name: 'Korrektur \u00fcbernehmen' }),
+    ).toBeEnabled()
+    await page
+      .getByRole('button', { name: 'Korrektur \u00fcbernehmen' })
+      .click()
+    const editedTaxonomies = await page.evaluate(async () => {
+      const result = await window.catalogDesktop!.listShopCatalogProducts({
+        url: 'https://catalogdesk.local/',
+        page: 0,
+        pageSize: 1,
+      })
+      if (!result.ok) throw new Error(result.error)
+      return result.value.products[0].taxonomies
+    })
+    expect(editedTaxonomies).toEqual({
+      categories: [{ id: 1, name: 'Papeterie', slug: null }],
+      tags: [
+        { id: 4, name: 'Neu', slug: 'neu' },
+        { id: null, name: 'Sommer', slug: null },
+      ],
+      brands: [
+        { id: 8, name: 'Katalogwerk', slug: 'katalogwerk' },
+        { id: null, name: 'Neue Marke', slug: null },
+      ],
+    })
     await page.screenshot({
       path: testInfo.outputPath('woocommerce-import.png'),
     })
@@ -366,6 +398,11 @@ test('imports all WooCommerce pages with decimal prices and saves the catalog in
     await expect(
       page.locator('.stats').getByRole('button', { name: /Exportbereit/ }),
     ).toContainText('101')
+    await page.getByRole('button', { name: 'Datensatz 1 bearbeiten' }).click()
+    await expect(page.getByLabel('Marken')).toHaveValue(
+      'Katalogwerk\nNeue Marke',
+    )
+    await page.getByRole('button', { name: 'Editor schliessen' }).last().click()
     await page
       .getByRole('button', { name: 'Importprojekte', exact: true })
       .click()

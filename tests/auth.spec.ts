@@ -103,6 +103,18 @@ test('bootstraps an administrator, manages a reader and enforces role restrictio
     expect(
       await page.evaluate(() => window.catalogDesktop!.restoreDatabase()),
     ).toMatchObject({ ok: false })
+    expect(
+      await page.evaluate(() =>
+        window.catalogDesktop!.saveShopProductTaxonomies({
+          url: 'https://example.com/',
+          productId: 1,
+          taxonomies: { categories: [], tags: [], brands: [] },
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Benutzerrolle'),
+    })
     await page.getByRole('button', { name: 'Abmelden' }).click()
     await page.getByLabel('Benutzername').fill('SHOP-ADMIN')
     await page

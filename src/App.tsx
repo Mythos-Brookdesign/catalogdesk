@@ -46,7 +46,11 @@ import type {
   Options,
   Product,
 } from './domain/catalog'
-import type { ImportedShop } from './types/desktop'
+import type {
+  ImportedShop,
+  ProductTaxonomies,
+  ProductTaxonomyTerm,
+} from './types/desktop'
 import type { AppUser } from './types/desktop'
 import { demoCsv, demoImages, demoName } from './data/demo'
 import { Dialog } from './components/Dialog'
@@ -74,6 +78,31 @@ const message = (error: unknown) =>
   error instanceof Error
     ? error.message
     : 'Ein unerwarteter Fehler ist aufgetreten.'
+const taxonomyFields = [
+  ['categories', 'Kategorien'],
+  ['tags', 'Schlagwoerter'],
+  ['brands', 'Marken'],
+] as const
+
+function parseTaxonomyNames(
+  value: string,
+  existing: ProductTaxonomyTerm[],
+): ProductTaxonomyTerm[] {
+  const terms = new Map(
+    existing.map((term) => [term.name.toLocaleLowerCase(), term]),
+  )
+  return [
+    ...new Set(
+      value
+        .split(/\r?\n/)
+        .map((name) => name.trim())
+        .filter(Boolean),
+    ),
+  ].map(
+    (name) =>
+      terms.get(name.toLocaleLowerCase()) ?? { id: null, name, slug: null },
+  )
+}
 const filterLabels: Record<Filter, string> = {
   all: 'Alle',
   valid: 'Bereit',
@@ -108,6 +137,7 @@ function Status({ row }: { row: CatalogRow }) {
 function RowEditor({
   row,
   draftValues,
+  taxonomyValues,
   options,
   onSave,
   onExclude,
@@ -117,14 +147,21 @@ function RowEditor({
 }: {
   row: CatalogRow
   draftValues: Product
+  taxonomyValues?: ProductTaxonomies
   options: Options
-  onSave: (draft: Product) => void
+  onSave: (
+    draft: Product,
+    taxonomies?: ProductTaxonomies,
+  ) => void | Promise<void>
   onExclude: () => void
   onClose: () => void
   busy: boolean
   readOnly: boolean
 }) {
   const [draft, setDraft] = useState<Product>(draftValues)
+  const [taxonomyDraft, setTaxonomyDraft] = useState<ProductTaxonomies | null>(
+    taxonomyValues ?? null,
+  )
   return (
     <>
       <button
@@ -171,58 +208,98 @@ function RowEditor({
         <form
           onSubmit={(event) => {
             event.preventDefault()
-            onSave(draft)
+            void onSave(draft, taxonomyDraft ?? undefined)
           }}
         >
           <div className="editor-fields">
-            {fields.map(({ key, label, required }) => (
-              <label className="field" key={key}>
-                <span>
-                  {label}
-                  {required && <span className="required"> *</span>}
-                  {key === 'price' && (
-                    <small>
-                      {options.priceFormat === 'de' ? '1.234,50' : '1,234.50'}
-                    </small>
-                  )}
-                </span>
-                {key === 'description' ? (
-                  <textarea
-                    rows={3}
-                    value={draft[key]}
-                    readOnly={readOnly}
-                    onChange={(event) =>
-                      setDraft({ ...draft, [key]: event.target.value })
-                    }
-                  />
-                ) : (
-                  <input
-                    value={draft[key]}
-                    readOnly={readOnly}
-                    onChange={(event) =>
-                      setDraft({ ...draft, [key]: event.target.value })
-                    }
-                    inputMode={
-                      key === 'price'
-                        ? 'decimal'
-                        : key === 'stock'
-                          ? 'numeric'
-                          : 'text'
-                    }
-                  />
-                )}
-                {row.changes.includes(key) && (
-                  <span className="value-change">
-                    <span className="old-value" title={row.original[key]}>
-                      {row.original[key] || '(leer)'}
-                    </span>
-                    <ArrowRight size={12} />
-                    <span>{row.product[key] || '(leer)'}</span>
+            {fields
+              .filter(({ key }) => key !== 'category' || !taxonomyDraft)
+              .map(({ key, label, required }) => (
+                <label className="field" key={key}>
+                  <span>
+                    {label}
+                    {required && <span className="required"> *</span>}
+                    {key === 'price' && (
+                      <small>
+                        {options.priceFormat === 'de' ? '1.234,50' : '1,234.50'}
+                      </small>
+                    )}
                   </span>
-                )}
-              </label>
-            ))}
+                  {key === 'description' ? (
+                    <textarea
+                      rows={3}
+                      value={draft[key]}
+                      readOnly={readOnly}
+                      onChange={(event) =>
+                        setDraft({ ...draft, [key]: event.target.value })
+                      }
+                    />
+                  ) : (
+                    <input
+                      value={draft[key]}
+                      readOnly={readOnly}
+                      onChange={(event) =>
+                        setDraft({ ...draft, [key]: event.target.value })
+                      }
+                      inputMode={
+                        key === 'price'
+                          ? 'decimal'
+                          : key === 'stock'
+                            ? 'numeric'
+                            : 'text'
+                      }
+                    />
+                  )}
+                  {row.changes.includes(key) && (
+                    <span className="value-change">
+                      <span className="old-value" title={row.original[key]}>
+                        {row.original[key] || '(leer)'}
+                      </span>
+                      <ArrowRight size={12} />
+                      <span>{row.product[key] || '(leer)'}</span>
+                    </span>
+                  )}
+                </label>
+              ))}
           </div>
+          {taxonomyDraft && (
+            <div className="taxonomy-editor">
+              <h3>WooCommerce-Taxonomien</h3>
+              {taxonomyFields.map(([key, label]) => (
+                <label className="field" key={key}>
+                  <span>{label}</span>
+                  <textarea
+                    rows={2}
+                    aria-label={label}
+                    value={taxonomyDraft[key]
+                      .map((term) => term.name)
+                      .join('\n')}
+                    readOnly={readOnly}
+                    onChange={(event) =>
+                      setTaxonomyDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              [key]: parseTaxonomyNames(
+                                event.target.value,
+                                current[key],
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                  />
+                  {taxonomyDraft[key].some((term) => term.id === null) && (
+                    <small>Neue Begriffe sind lokal vorgemerkt.</small>
+                  )}
+                </label>
+              ))}
+              <p className="taxonomy-editor-note">
+                Aenderungen werden lokal gespeichert. Der WooCommerce-Shop wird
+                dabei nicht veraendert.
+              </p>
+            </div>
+          )}
           <div className="editor-actions">
             <button
               type="submit"
@@ -303,6 +380,12 @@ export default function App({
   const [pendingShopImport, setPendingShopImport] =
     useState<ImportedShop | null>(null)
   const [shopImportNotice, setShopImportNotice] = useState('')
+  const [shopUrl, setShopUrl] = useState('')
+  const [simpleProductIds, setSimpleProductIds] = useState<number[]>([])
+  const [simpleProductTaxonomies, setSimpleProductTaxonomies] = useState<
+    ProductTaxonomies[]
+  >([])
+  const [savingProductTaxonomies, setSavingProductTaxonomies] = useState(false)
   const [loadingLocalCatalog, setLoadingLocalCatalog] = useState(
     Boolean(desktop && currentUser),
   )
@@ -311,7 +394,7 @@ export default function App({
     options: Options
     id: string
   } | null>(null)
-  const busy = importing || analyzing || exporting
+  const busy = importing || analyzing || exporting || savingProductTaxonomies
   const canWriteCatalog = !currentUser || currentUser.role !== 'reader'
   const canReadShop = !currentUser || currentUser.role !== 'reader'
   const canManageUsers = currentUser?.role === 'admin'
@@ -375,6 +458,9 @@ export default function App({
         )
       const parsed = await request<Dataset>('parse', file.content)
       setShopImportNotice('')
+      setShopUrl('')
+      setSimpleProductIds([])
+      setSimpleProductTaxonomies([])
       setDataset(parsed)
       setActiveProject(null)
       setSavedSnapshot(null)
@@ -407,6 +493,9 @@ export default function App({
 
   function restoreProject(project: SavedProject) {
     setShopImportNotice('')
+    setShopUrl('')
+    setSimpleProductIds([])
+    setSimpleProductTaxonomies([])
     const saved = project.snapshot
     setDataset(saved.dataset)
     setFilename(saved.filename)
@@ -442,6 +531,9 @@ export default function App({
     const shopEdits: Record<number, Partial<Product>> = {}
     const shopExcluded: number[] = []
     setDataset(result.dataset)
+    setShopUrl(result.url)
+    setSimpleProductIds(result.simpleProductIds)
+    setSimpleProductTaxonomies(result.simpleProductTaxonomies)
     setFilename(shopFilename)
     setIsDemo(false)
     setMapping(shopMapping)
@@ -507,6 +599,8 @@ export default function App({
           imported: catalog.imported,
           total: catalog.total,
           skipped: catalog.skipped,
+          simpleProductIds: catalog.simpleProductIds,
+          simpleProductTaxonomies: catalog.simpleProductTaxonomies,
           importedAt: catalog.importedAt,
           credentialsSaved: true,
         })
@@ -1350,19 +1444,62 @@ export default function App({
                         ...selectedRow.original,
                         ...edits[selectedRow.index],
                       }}
+                      taxonomyValues={
+                        simpleProductIds[selectedRow.index]
+                          ? simpleProductTaxonomies[selectedRow.index]
+                          : undefined
+                      }
                       options={options}
                       busy={busy}
                       readOnly={!canWriteCatalog}
                       onClose={() => setSelected(null)}
                       onExclude={() => toggleExclude(selectedRow.index)}
-                      onSave={(draft) => {
+                      onSave={async (draft, taxonomies) => {
+                        const productId = simpleProductIds[selectedRow.index]
+                        if (taxonomies && shopUrl && productId && desktop) {
+                          setSavingProductTaxonomies(true)
+                          try {
+                            const result =
+                              await desktop.saveShopProductTaxonomies({
+                                url: shopUrl,
+                                productId,
+                                taxonomies,
+                              })
+                            if (!result.ok) throw new Error(result.error)
+                            setSimpleProductTaxonomies((current) => {
+                              const next = [...current]
+                              next[selectedRow.index] = taxonomies
+                              return next
+                            })
+                            setShopImportNotice(
+                              `Taxonomien fuer ${draft.name} lokal gespeichert. Der WooCommerce-Shop wurde nicht veraendert.`,
+                            )
+                          } catch (reason) {
+                            setError(message(reason))
+                            return
+                          } finally {
+                            setSavingProductTaxonomies(false)
+                          }
+                        }
                         invalidateAnalysis()
+                        const updatedDraft = taxonomies
+                          ? {
+                              ...draft,
+                              category: taxonomies.categories
+                                .map((term) => term.name.replaceAll(',', '\\,'))
+                                .join(', '),
+                            }
+                          : draft
                         setEdits((current) => ({
                           ...current,
-                          [selectedRow.index]: draft,
+                          [selectedRow.index]: updatedDraft,
                         }))
                         setSelected(null)
-                        setToast('Korrektur uebernommen.')
+                        setToast(
+                          taxonomies
+                            ? 'Lokale Produktkorrektur gespeichert.'
+                            : 'Korrektur uebernommen.',
+                        )
                       }}
                     />
                   )}

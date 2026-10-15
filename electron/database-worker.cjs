@@ -35,6 +35,7 @@ const operations = new Set([
   'shopCatalogInfo',
   'loadLatestShopCatalog',
   'listShopCatalogProducts',
+  'saveShopProductTaxonomies',
   'backupInto',
   'restoreDatabase',
 ])

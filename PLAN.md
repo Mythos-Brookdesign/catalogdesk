@@ -72,6 +72,7 @@ Eine eigenstaendige Netzwerk-/Team-Edition kann spaeter einen zentralen Synchron
 - Ausgewaehlte WooCommerce-Produktpayloads einschliesslich Germanized-Metadaten, externer ID, Typ und Eltern-ID dauerhaft und transaktional in SQLite speichern; den Shop selbst dabei nicht veraendern.
 - Den zuletzt importierten Shopkatalog nach Neustart wieder anzeigen und seitenweise aus SQLite laden. Rohdaten fuer noch nicht editierbare Produkttypen nicht verwerfen.
 - Beim Appstart nach der Anmeldung den zuletzt importierten Katalog ohne Netzwerkrequest aus SQLite laden; einfache Produkte in der bestehenden Arbeitsansicht wiederherstellen und weitere Typen als lokal vorhandene Rohdaten kenntlich machen.
+- Produktkategorien, -marken und -schlagwoerter pro Produkt mit stabilen Term-IDs lokal bearbeiten und als Actor-attribuierte Overrides speichern. Neue Begriffe ohne Shop-ID bleiben lokale Entwuerfe; es erfolgt kein Shop-Schreibzugriff ohne gesonderte Vorschau und Freigabe.
 - Lokaler Katalog fuer einfache und variable Produkte sowie Varianten mit Elternbeziehung.
 - Variantenattribute (z. B. Groesse und Farbe), Attributwerte, SKU, Preis und Bestand pro Variante korrekt abbilden.
 - Zugeordnete Hersteller-/Markenreferenzen mit stabiler Shop-ID, Slug und Anzeigename erhalten. Herstellerdaten nicht aus Produktnamen erraten.

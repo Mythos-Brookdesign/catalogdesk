@@ -14,7 +14,11 @@ const productSchema = z
     manage_stock: z.boolean(),
     stock_quantity: z.number().int().safe().nullable(),
     categories: z
-      .array(z.object({ id: z.number().int().positive(), name: z.string() }))
+      .array(
+        z
+          .object({ id: z.number().int().positive(), name: z.string() })
+          .passthrough(),
+      )
       .max(1000),
   })
   .passthrough()

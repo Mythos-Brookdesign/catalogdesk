@@ -277,6 +277,24 @@ app.whenReady().then(async () => {
       }
     })
   }
+  ipcMain.handle(
+    'catalog:save-shop-product-taxonomies',
+    async (event, envelope) => {
+      try {
+        const { user, payload } = authorize(event, envelope, 'catalog:write')
+        return {
+          ok: true,
+          value: await projectDatabase.request('saveShopProductTaxonomies', {
+            ...payload,
+            actorId: user.id,
+            actorUsername: user.username,
+          }),
+        }
+      } catch (error) {
+        return { ok: false, error: error.message }
+      }
+    },
+  )
   session.defaultSession.setPermissionRequestHandler(
     (_contents, _permission, callback) => callback(false),
   )
@@ -642,10 +660,35 @@ app.whenReady().then(async () => {
             actorUsername: actor.username,
             products: catalogProducts,
           })
+          const simpleProducts = catalogProducts.filter(
+            (product) => product.type === 'simple',
+          )
+          const simpleProductTaxonomies = simpleProducts.map((product) =>
+            Object.fromEntries(
+              ['categories', 'tags', 'brands'].map((key) => [
+                key,
+                (Array.isArray(product.payload[key])
+                  ? product.payload[key]
+                  : []
+                )
+                  .filter((term) => term && typeof term.name === 'string')
+                  .map((term) => ({
+                    id: Number.isSafeInteger(term.id) ? term.id : null,
+                    name: term.name,
+                    slug: typeof term.slug === 'string' ? term.slug : null,
+                  })),
+              ]),
+            ),
+          )
           return await rememberExplicitShopCredentials(
             payload.payload,
             connection,
-            { ...importResult, catalogStored: stored.productCount },
+            {
+              ...importResult,
+              catalogStored: stored.productCount,
+              simpleProductIds: simpleProducts.map((product) => product.id),
+              simpleProductTaxonomies,
+            },
           )
         } catch {
           return {

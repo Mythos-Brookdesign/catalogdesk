@@ -1321,6 +1321,50 @@ tr:last-child td {
   gap: 4px;
   padding-top: 8px;
 }
+.taxonomy-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 15px;
+  .taxonomy-editor {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 15px;
+    border-top: 1px solid var(--line);
+  }
+  .taxonomy-editor h3 {
+    margin: 0;
+    font-size: 13px;
+  }
+  .taxonomy-editor .field {
+    margin: 0;
+  }
+  .taxonomy-editor .field textarea {
+    min-height: 48px;
+  }
+  .taxonomy-editor-note {
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  border-top: 1px solid var(--line);
+}
+.taxonomy-editor h3 {
+  margin: 0;
+  font-size: 13px;
+}
+.taxonomy-editor .field {
+  margin: 0;
+}
+.taxonomy-editor .field textarea {
+  min-height: 48px;
+}
+.taxonomy-editor-note {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
 .inspector-scrim {
   display: none;
 }

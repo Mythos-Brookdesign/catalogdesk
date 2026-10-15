@@ -132,6 +132,29 @@ const shopCatalogPageSchema = z
     pageSize: z.number().int().min(1).max(100).default(50),
   })
   .strict()
+const taxonomyTermSchema = z
+  .object({
+    id: z.number().int().positive().nullable(),
+    name: z.string().trim().min(1).max(255),
+    slug: z.string().trim().max(255).nullable(),
+  })
+  .strict()
+const productTaxonomiesSchema = z
+  .object({
+    categories: z.array(taxonomyTermSchema).max(1000),
+    tags: z.array(taxonomyTermSchema).max(1000),
+    brands: z.array(taxonomyTermSchema).max(1000),
+  })
+  .strict()
+const saveProductTaxonomiesSchema = z
+  .object({
+    url: shopCatalogSchema.shape.url,
+    productId: z.number().int().positive(),
+    actorId: userIdSchema,
+    actorUsername: z.string().min(3).max(32),
+    taxonomies: productTaxonomiesSchema,
+  })
+  .strict()
 const databasePathSchema = z
   .string()
   .min(1)
@@ -268,7 +291,7 @@ function openDatabase(filename) {
     )
     database.exec('BEGIN IMMEDIATE')
     const version = database.prepare('PRAGMA user_version').get().user_version
-    if (version > 6)
+    if (version > 7)
       throw new Error(
         'Diese Datenbank wurde mit einer neueren App-Version erstellt.',
       )
@@ -354,6 +377,21 @@ function openDatabase(filename) {
       CREATE INDEX shop_catalog_products_parent ON shop_catalog_products(shop_url, parent_id);
       PRAGMA user_version = 6;`)
     }
+    if (version < 7) {
+      database.exec(`CREATE TABLE shop_catalog_product_taxonomies (
+        shop_url TEXT NOT NULL,
+        product_id INTEGER NOT NULL,
+        categories TEXT NOT NULL CHECK(json_valid(categories)),
+        tags TEXT NOT NULL CHECK(json_valid(tags)),
+        brands TEXT NOT NULL CHECK(json_valid(brands)),
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES app_users(id),
+        updated_by_username TEXT NOT NULL,
+        PRIMARY KEY(shop_url, product_id),
+        FOREIGN KEY(shop_url, product_id) REFERENCES shop_catalog_products(shop_url, product_id) ON DELETE CASCADE
+      ) STRICT;
+      PRAGMA user_version = 7;`)
+    }
     database.exec('COMMIT')
   } catch (error) {
     if (database.isTransaction) database.exec('ROLLBACK')
@@ -411,6 +449,32 @@ function openDatabase(filename) {
     return { ...row, items, events }
   }
 
+  function readShopProductTaxonomies(shopUrl, productId, storedPayload) {
+    const overrides = database
+      .prepare(
+        'SELECT categories, tags, brands FROM shop_catalog_product_taxonomies WHERE shop_url = ? AND product_id = ?',
+      )
+      .get(shopUrl, productId)
+    if (overrides)
+      return {
+        categories: JSON.parse(overrides.categories),
+        tags: JSON.parse(overrides.tags),
+        brands: JSON.parse(overrides.brands),
+      }
+    return Object.fromEntries(
+      ['categories', 'tags', 'brands'].map((key) => [
+        key,
+        (Array.isArray(storedPayload[key]) ? storedPayload[key] : [])
+          .filter((term) => term && typeof term.name === 'string')
+          .map((term) => ({
+            id: Number.isSafeInteger(term.id) ? term.id : null,
+            name: term.name,
+            slug: typeof term.slug === 'string' ? term.slug : null,
+          })),
+      ]),
+    )
+  }
+
   function listShopCatalogProducts(payload) {
     const parsed = shopCatalogPageSchema.parse(payload)
     const offset = parsed.page * parsed.pageSize
@@ -424,7 +488,18 @@ function openDatabase(filename) {
         'SELECT product_id AS id, parent_id AS parentId, type, sku, name, payload FROM shop_catalog_products WHERE shop_url = ? ORDER BY COALESCE(parent_id, product_id), parent_id IS NOT NULL, product_id LIMIT ? OFFSET ?',
       )
       .all(parsed.url, parsed.pageSize, offset)
-      .map((product) => ({ ...product, payload: JSON.parse(product.payload) }))
+      .map((product) => {
+        const storedPayload = JSON.parse(product.payload)
+        return {
+          ...product,
+          payload: storedPayload,
+          taxonomies: readShopProductTaxonomies(
+            parsed.url,
+            product.id,
+            storedPayload,
+          ),
+        }
+      })
     return { products, total, page: parsed.page, pageSize: parsed.pageSize }
   }
 
@@ -497,6 +572,31 @@ function openDatabase(filename) {
         .get(shopUrl)
       return row ?? null
     },
+    saveShopProductTaxonomies(payload) {
+      const parsed = saveProductTaxonomiesSchema.parse(payload)
+      const exists = database
+        .prepare(
+          'SELECT 1 AS found FROM shop_catalog_products WHERE shop_url = ? AND product_id = ?',
+        )
+        .get(parsed.url, parsed.productId)
+      if (!exists) throw new Error('Shopprodukt wurde nicht gefunden.')
+      const updatedAt = new Date().toISOString()
+      database
+        .prepare(
+          'INSERT INTO shop_catalog_product_taxonomies (shop_url, product_id, categories, tags, brands, updated_at, updated_by_user_id, updated_by_username) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(shop_url, product_id) DO UPDATE SET categories = excluded.categories, tags = excluded.tags, brands = excluded.brands, updated_at = excluded.updated_at, updated_by_user_id = excluded.updated_by_user_id, updated_by_username = excluded.updated_by_username',
+        )
+        .run(
+          parsed.url,
+          parsed.productId,
+          JSON.stringify(parsed.taxonomies.categories),
+          JSON.stringify(parsed.taxonomies.tags),
+          JSON.stringify(parsed.taxonomies.brands),
+          updatedAt,
+          parsed.actorId,
+          parsed.actorUsername,
+        )
+      return { updatedAt, updatedBy: parsed.actorUsername }
+    },
     loadLatestShopCatalog() {
       const catalog = database
         .prepare(
@@ -507,10 +607,17 @@ function openDatabase(filename) {
 
       const simpleProducts = database
         .prepare(
-          "SELECT payload FROM shop_catalog_products WHERE shop_url = ? AND type = 'simple' ORDER BY product_id",
+          "SELECT product_id AS id, payload FROM shop_catalog_products WHERE shop_url = ? AND type = 'simple' ORDER BY product_id",
         )
         .all(catalog.url)
-        .map((row) => JSON.parse(row.payload))
+        .map((row) => {
+          const product = JSON.parse(row.payload)
+          return {
+            id: row.id,
+            product,
+            taxonomies: readShopProductTaxonomies(catalog.url, row.id, product),
+          }
+        })
       const skipped = database
         .prepare(
           "SELECT type, COUNT(*) AS count FROM shop_catalog_products WHERE shop_url = ? AND type != 'simple' GROUP BY type ORDER BY type",
@@ -530,6 +637,10 @@ function openDatabase(filename) {
       return {
         ...catalog,
         imported: simpleProducts.length,
+        simpleProductIds: simpleProducts.map((entry) => entry.id),
+        simpleProductTaxonomies: simpleProducts.map(
+          (entry) => entry.taxonomies,
+        ),
         skipped,
         dataset: simpleProducts.length
           ? {
@@ -541,14 +652,18 @@ function openDatabase(filename) {
                 'Categories',
                 'Description',
               ],
-              rows: simpleProducts.map((product) => [
+              rows: simpleProducts.map(({ product, taxonomies }) => [
                 product.sku ?? '',
                 product.name ?? '',
                 product.regular_price ?? '',
                 product.manage_stock && product.stock_quantity !== null
                   ? String(product.stock_quantity)
                   : '',
-                categories(product),
+                taxonomies.categories.length
+                  ? taxonomies.categories
+                      .map((category) => category.name.replaceAll(',', '\\,'))
+                      .join(', ')
+                  : categories(product),
                 product.description ?? '',
               ]),
               delimiter: ',',
@@ -900,7 +1015,7 @@ function openDatabase(filename) {
         )
       return true
     },
-    info: () => ({ path: filename, schemaVersion: 6 }),
+    info: () => ({ path: filename, schemaVersion: 7 }),
     close: () => database.close(),
   }
 }

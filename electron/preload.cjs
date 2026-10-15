@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('catalogDesktop', {
   loadLatestShopCatalog: () => authorized('catalog:load-latest-shop-catalog'),
   listShopCatalogProducts: (payload) =>
     authorized('catalog:shop-catalog-products', payload),
+  saveShopProductTaxonomies: (payload) =>
+    authorized('catalog:save-shop-product-taxonomies', payload),
   loadProject: (id) => authorized('catalog:projects-load', id),
   saveProject: (payload) => authorized('catalog:projects-save', payload),
   deleteProject: (payload) => authorized('catalog:projects-delete', payload),

@@ -48,7 +48,7 @@ describe('local SQLite projects', () => {
     database.close()
     const old = new DatabaseSync(filename)
     old.exec(
-      'DROP TABLE shop_catalog_products; DROP TABLE shop_catalog_imports; DROP TABLE transfer_events; DROP TABLE transfer_runs; DROP TABLE app_users; PRAGMA user_version = 2',
+      'DROP TABLE shop_catalog_product_taxonomies; DROP TABLE shop_catalog_products; DROP TABLE shop_catalog_imports; DROP TABLE transfer_events; DROP TABLE transfer_runs; DROP TABLE app_users; PRAGMA user_version = 2',
     )
     old.close()
     database = storage.openDatabase(filename)
@@ -127,7 +127,7 @@ describe('local SQLite projects', () => {
     database.close()
     const old = new DatabaseSync(filename)
     old.exec(
-      'DROP TABLE shop_catalog_products; DROP TABLE shop_catalog_imports; DROP TABLE transfer_events; DROP TABLE transfer_runs; DROP TABLE app_users; DROP TABLE settings; PRAGMA user_version = 1',
+      'DROP TABLE shop_catalog_product_taxonomies; DROP TABLE shop_catalog_products; DROP TABLE shop_catalog_imports; DROP TABLE transfer_events; DROP TABLE transfer_runs; DROP TABLE app_users; DROP TABLE settings; PRAGMA user_version = 1',
     )
     old.close()
     database = storage.openDatabase(filename)
@@ -243,6 +243,20 @@ describe('local SQLite projects', () => {
       productCount: 3,
       importedAt,
     })
+    const taxonomyDraft = {
+      categories: [{ id: 2, name: 'Buerobedarf', slug: 'buerobedarf' }],
+      tags: [{ id: null, name: 'Geschenkidee', slug: null }],
+      brands: [{ id: 8, name: 'Katalogwerk', slug: 'katalogwerk' }],
+    }
+    expect(
+      database.saveShopProductTaxonomies({
+        url: input.url,
+        productId: 103,
+        actorId: actor.id,
+        actorUsername: actor.username,
+        taxonomies: taxonomyDraft,
+      }),
+    ).toMatchObject({ updatedBy: 'catalog-admin' })
     expect(
       database.listShopCatalogProducts({
         url: input.url,
@@ -267,14 +281,19 @@ describe('local SQLite projects', () => {
         page: 0,
         pageSize: 100,
       }).products,
-    ).toEqual(products)
+    ).toMatchObject(products)
+    expect(
+      database
+        .listShopCatalogProducts({ url: input.url, pageSize: 100 })
+        .products.find((product) => product.id === 103).taxonomies,
+    ).toEqual(taxonomyDraft)
     database.close()
 
     database = storage.openDatabase(filename)
     try {
       expect(
         database.listShopCatalogProducts({ url: input.url }).products,
-      ).toEqual(products)
+      ).toMatchObject(products)
       expect(database.loadLatestShopCatalog()).toMatchObject({
         url: input.url,
         importedBy: 'catalog-admin',
@@ -286,18 +305,12 @@ describe('local SQLite projects', () => {
         ],
         dataset: {
           rows: [
-            [
-              'mug-1',
-              'Tasse',
-              '15.90',
-              '3',
-              'Papeterie\\, Buero',
-              'Keramiktasse',
-            ],
+            ['mug-1', 'Tasse', '15.90', '3', 'Buerobedarf', 'Keramiktasse'],
           ],
         },
+        simpleProductTaxonomies: [taxonomyDraft],
       })
-      expect(database.info().schemaVersion).toBe(6)
+      expect(database.info().schemaVersion).toBe(7)
     } finally {
       database.close()
     }
@@ -400,11 +413,11 @@ describe('local SQLite projects', () => {
     const filename = location()
     storage.openDatabase(filename).close()
     const database = new DatabaseSync(filename)
-    database.exec('PRAGMA user_version = 7')
+    database.exec('PRAGMA user_version = 8')
     database.close()
     expect(() => storage.openDatabase(filename)).toThrow('neueren')
     const check = new DatabaseSync(filename)
-    expect(check.prepare('PRAGMA user_version').get().user_version).toBe(7)
+    expect(check.prepare('PRAGMA user_version').get().user_version).toBe(8)
     check.close()
   })
 })
